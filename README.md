@@ -8,7 +8,7 @@ A Swift library for accessing SISIS-based OPAC (Online Public Access Catalog) sy
 - 📚 **Detailed Media Information**: Comprehensive bibliographic data and availability status
 - 🏛️ **Multi-Library Support**: Search across different library branches
 - 🛡️ **Type-Safe API**: Full Swift 6 compatibility with sendable types
-- ⚡ **Async/Await Ready**: Modern Swift concurrency patterns
+- ⚡ **Async/Await Ready**: Native async/await support with backward compatibility
 - 🧪 **Well-Tested**: Comprehensive unit test coverage
 
 ## Installation
@@ -47,17 +47,15 @@ The easiest way to search is using a simple query across all fields:
 // Create a simple search query
 let searchQuery = SearchQuery(simpleQuery: "Harry Potter")
 
-// Perform the search
-opacService.advancedSearch(searchQuery: searchQuery) { result in
-    switch result {
-    case .success(let mediaItems):
-        print("Found \(mediaItems.count) items:")
-        for media in mediaItems {
-            print("- \(media.title) by \(media.author)")
-        }
-    case .failure(let error):
-        print("Search failed: \(error.localizedDescription)")
+// Perform the search using async/await
+do {
+    let mediaItems = try await opacService.advancedSearch(searchQuery: searchQuery)
+    print("Found \(mediaItems.count) items:")
+    for media in mediaItems {
+        print("- \(media.title) by \(media.author)")
     }
+} catch {
+    print("Search failed: \(error.localizedDescription)")
 }
 ```
 
@@ -80,8 +78,11 @@ let searchQuery = SearchQuery(
     resultsPerPage: 25
 )
 
-opacService.advancedSearch(searchQuery: searchQuery) { result in
+do {
+    let results = try await opacService.advancedSearch(searchQuery: searchQuery)
     // Handle results...
+} catch {
+    print("Search failed: \(error)")
 }
 ```
 
@@ -107,13 +108,11 @@ let complexQuery = SearchQuery(
     sortOrder: .relevance
 )
 
-opacService.advancedSearch(searchQuery: complexQuery) { result in
-    switch result {
-    case .success(let results):
-        print("Found \(results.count) matching items")
-    case .failure(let error):
-        print("Error: \(error)")
-    }
+do {
+    let results = try await opacService.advancedSearch(searchQuery: complexQuery)
+    print("Found \(results.count) matching items")
+} catch {
+    print("Error: \(error)")
 }
 ```
 
@@ -135,8 +134,11 @@ let secondAuthor = SearchQuery.SearchTerm(
 
 let multiAuthorQuery = SearchQuery(terms: [firstAuthor, secondAuthor])
 
-opacService.advancedSearch(searchQuery: multiAuthorQuery) { result in
+do {
+    let results = try await opacService.advancedSearch(searchQuery: multiAuthorQuery)
     // Handle results...
+} catch {
+    print("Search failed: \(error)")
 }
 ```
 
@@ -152,8 +154,11 @@ let isbnTerm = SearchQuery.SearchTerm(
 
 let isbnQuery = SearchQuery(terms: [isbnTerm])
 
-opacService.advancedSearch(searchQuery: isbnQuery) { result in
+do {
+    let results = try await opacService.advancedSearch(searchQuery: isbnQuery)
     // Handle results...
+} catch {
+    print("Search failed: \(error)")
 }
 ```
 
@@ -169,8 +174,11 @@ let yearTerm = SearchQuery.SearchTerm(
 
 let recentBooksQuery = SearchQuery(terms: [yearTerm])
 
-opacService.advancedSearch(searchQuery: recentBooksQuery) { result in
+do {
+    let results = try await opacService.advancedSearch(searchQuery: recentBooksQuery)
     // Handle results...
+} catch {
+    print("Search failed: \(error)")
 }
 ```
 
@@ -182,33 +190,32 @@ Once you have a media item from search results, you can get detailed information
 // Assuming you have a media item from search results
 let mediaId = "12345" // This comes from the search results
 
-opacService.getDetailedInfo(for: mediaId) { result in
-    switch result {
-    case .success(let detailedMedia):
-        print("Title: \(detailedMedia.title)")
-        print("Author: \(detailedMedia.author)")
-        print("Publisher: \(detailedMedia.publisher)")
-        print("ISBN: \(detailedMedia.isbn)")
-        print("Description: \(detailedMedia.description)")
+do {
+    let detailedMedia = try await opacService.getDetailedInfo(for: mediaId)
+    
+    print("Title: \(detailedMedia.basicInfo.title)")
+    print("Author: \(detailedMedia.basicInfo.author)")
+    print("Year: \(detailedMedia.basicInfo.year)")
+    print("Media Type: \(detailedMedia.basicInfo.mediaType)")
+    print("Description: \(detailedMedia.description ?? "N/A")")
+    
+    // Check availability
+    for availability in detailedMedia.availability {
+        print("Location: \(availability.location)")
+        print("Available: \(availability.isAvailable ? "Yes" : "No")")
+        print("Call Number: \(availability.callNumber)")
         
-        // Check availability
-        for availability in detailedMedia.availability {
-            print("Location: \(availability.location)")
-            print("Available: \(availability.isAvailable ? "Yes" : "No")")
-            print("Call Number: \(availability.callNumber)")
-            
-            if let dueDate = availability.dueDate {
-                print("Due back: \(dueDate)")
-            }
-            
-            if availability.reservationCount > 0 {
-                print("Reservations: \(availability.reservationCount)")
-            }
+        if let dueDate = availability.dueDate {
+            print("Due back: \(dueDate)")
         }
         
-    case .failure(let error):
-        print("Failed to get details: \(error.localizedDescription)")
+        if availability.reservationCount > 0 {
+            print("Reservations: \(availability.reservationCount)")
+        }
     }
+    
+} catch {
+    print("Failed to get details: \(error.localizedDescription)")
 }
 ```
 
@@ -252,27 +259,130 @@ The service supports multiple library branches:
 The library provides comprehensive error handling through the `SwiftOPACError` enum:
 
 ```swift
-opacService.advancedSearch(searchQuery: query) { result in
-    switch result {
-    case .success(let results):
-        // Handle successful results
-        break
+let query = SearchQuery(simpleQuery: "Programming")
+
+do {
+    let results = try await opacService.advancedSearch(searchQuery: query)
+    // Handle successful results
+} catch let error as SwiftOPACError {
+    switch error {
+    case .networkError(let underlying):
+        print("Network error: \(underlying.localizedDescription)")
+    case .parsingFailed:
+        print("Failed to parse response")
+    case .invalidRequest(let message):
+        print("Invalid request: \(message)")
+    case .sessionExpired:
+        print("Session expired, please retry")
+    }
+} catch {
+    print("Unexpected error: \(error.localizedDescription)")
+}
+```
+
+## Async/Await Support
+
+SwiftOPAC provides native async/await support for modern Swift concurrency:
+
+### Using Async/Await
+
+```swift
+import SwiftOPAC
+
+let opacService = SwiftOPACService()
+
+// Simple search with async/await
+let searchQuery = SearchQuery(simpleQuery: "Harry Potter")
+
+do {
+    let results = try await opacService.advancedSearch(searchQuery: searchQuery)
+    print("Found \(results.count) items:")
+    
+    for media in results {
+        print("- \(media.title) by \(media.author)")
+    }
+    
+    // Get detailed information for the first result (if available)
+    if let firstMedia = results.first, !firstMedia.id.isEmpty {
+        let detailedInfo = try await opacService.getDetailedInfo(for: firstMedia.id)
+        print("Detailed info: \(detailedInfo.basicInfo.title)")
+        print("Available copies: \(detailedInfo.availability.count)")
+    }
+    
+} catch {
+    print("Search failed: \(error)")
+}
+```
+
+### Complex Search with Async/Await
+
+```swift
+// Multi-field search using async/await
+let titleTerm = SearchQuery.SearchTerm(
+    query: "Harry Potter", 
+    category: .title, 
+    searchOperator: .and
+)
+
+let authorTerm = SearchQuery.SearchTerm(
+    query: "Rowling", 
+    category: .author, 
+    searchOperator: .and
+)
+
+let complexQuery = SearchQuery(
+    terms: [titleTerm, authorTerm],
+    library: .zentralbibliothek,
+    sortOrder: .relevance
+)
+
+do {
+    let results = try await opacService.advancedSearch(searchQuery: complexQuery)
+    
+    for media in results.prefix(5) {
+        print("Title: \(media.title)")
+        print("Author: \(media.author)")
+        print("Year: \(media.year)")
+        print("Type: \(media.mediaType)")
+        print("---")
+    }
+} catch {
+    print("Complex search failed: \(error)")
+}
+```
+
+### Error Handling with Async/Await
+
+```swift
+func performSearch() async {
+    let query = SearchQuery(simpleQuery: "Programming Books")
+    
+    do {
+        let results = try await opacService.advancedSearch(searchQuery: query)
         
-    case .failure(let error):
-        if let opacError = error as? SwiftOPACError {
-            switch opacError {
-            case .networkError(let underlying):
-                print("Network error: \(underlying.localizedDescription)")
-            case .parsingFailed:
-                print("Failed to parse response")
-            case .invalidRequest(let message):
-                print("Invalid request: \(message)")
-            case .sessionExpired:
-                print("Session expired, please retry")
-            }
-        } else {
-            print("Unexpected error: \(error.localizedDescription)")
+        if results.isEmpty {
+            print("No books found")
+            return
         }
+        
+        // Process results...
+        for media in results {
+            print("Found: \(media.title)")
+        }
+        
+    } catch let error as SwiftOPACError {
+        switch error {
+        case .networkError(let underlying):
+            print("Network issue: \(underlying.localizedDescription)")
+        case .parsingFailed:
+            print("Could not parse library response")
+        case .invalidRequest(let message):
+            print("Invalid search: \(message)")
+        case .sessionExpired:
+            print("Session expired, please retry")
+        }
+    } catch {
+        print("Unexpected error: \(error)")
     }
 }
 ```
@@ -400,7 +510,7 @@ class SearchViewController {
 
 ## Thread Safety
 
-All types in SwiftOPAC conform to `Sendable` and are thread-safe. The service can be used from any queue, and completion handlers are called on the same queue that initiated the request.
+All types in SwiftOPAC conform to `Sendable` and are thread-safe. The service can be used from any queue, and both async/await methods and completion handlers are called on the same queue that initiated the request.
 
 ## Contributing
 

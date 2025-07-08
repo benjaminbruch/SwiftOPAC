@@ -77,7 +77,7 @@ final class HTMLParser: Sendable {
                 if !title.isEmpty && !isUIElement(title) && title != author {
                     media.append(Media(title: title, author: author, year: year, mediaType: mediaType, id: id))
                     if media.count <= 3 {
-                        print("Added media: title='\(title)', author='\(author)', year='\(year)', type='\(mediaType)'")
+                        print("Added media: title='\(title)', author='\(author)', year='\(year)', type='\(mediaType)', id='\(id)'")
                     }
                 }
             }
@@ -300,12 +300,31 @@ final class HTMLParser: Sendable {
     }
     
     private func extractId(from element: Element) throws -> String {
+        // First try standard selectors
         let selectors = ["input[name=id]", "[data-id]"]
         for selector in selectors {
             if let idElement = try element.select(selector).first() {
-                return try idElement.val()
+                let idValue = try idElement.val()
+                if !idValue.isEmpty {
+                    return idValue
+                }
             }
         }
+        
+        // Try to extract ID from singleHit.do links
+        if let titleLink = try element.select("a[href*='singleHit.do']").first() {
+            let href = try titleLink.attr("href")
+            if let range = href.range(of: "id=") {
+                let idPart = String(href[range.upperBound...])
+                // Get the ID part (everything after id= until & or end of string)
+                if let endRange = idPart.range(of: "&") {
+                    return String(idPart[..<endRange.lowerBound])
+                } else {
+                    return idPart
+                }
+            }
+        }
+        
         return ""
     }
     

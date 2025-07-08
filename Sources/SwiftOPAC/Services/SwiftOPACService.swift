@@ -6,26 +6,17 @@ public final class SwiftOPACService: Sendable {
 
     public init() {}
 
-    private func establishSession(completion: @escaping @Sendable (Result<SessionData, Error>) -> Void) {
-
+    private func establishSession() async throws -> SessionData {
         guard let startURL = URL(string: Constants.baseURL) else {
-            completion(.failure(NSError(domain: "WebOPACService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid start URL"])))
-            return
+            throw NSError(domain: "WebOPACService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid start URL"])
         }
 
-        networkManager.fetch(url: startURL) { [weak self] result in
-            guard let self: SwiftOPACService = self else { return }
-
-            switch result {
-            case .success(let (html, cookies)):
-                if let sessionData: SessionData = self.htmlParser.extractSessionData(html: html, cookies: cookies) {
-                    completion(.success(sessionData))
-                } else {
-                    completion(.failure(NSError(domain: "WebOPACService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Could not establish session"])))
-                }
-            case .failure(let error):
-                completion(.failure(error))
-            }
+        let (html, cookies) = try await networkManager.fetch(url: startURL)
+        
+        if let sessionData: SessionData = htmlParser.extractSessionData(html: html, cookies: cookies) {
+            return sessionData
+        } else {
+            throw NSError(domain: "WebOPACService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Could not establish session"])
         }
     }
   
@@ -40,30 +31,21 @@ public final class SwiftOPACService: Sendable {
      * 
      * - Parameters:
      *   - searchQuery: Advanced search query with multiple terms and options
-     *   - completion: Completion handler with results or error
+     * - Returns: Array of Media items matching the search criteria
+     * - Throws: SwiftOPACError or other network/parsing errors
      */
-    public func advancedSearch(
-        searchQuery: SearchQuery, 
-        completion: @escaping @Sendable (Result<[Media], Error>) -> Void
-    ) {
-        establishSession { [weak self] result in
-            guard let self = self else { return }
-            
-            switch result {
-            case .success(let sessionData):
-                let queryItems = self.createAdvancedSearchQueryItems(
-                    searchQuery: searchQuery, 
-                    sessionId: sessionData.sessionId
-                )
-                self.performAdvancedSearch(
-                    queryItems: queryItems, 
-                    sessionData: sessionData, 
-                    completion: completion
-                )
-            case .failure(let error):
-                completion(.failure(error))
-            }
-        }
+    public func advancedSearch(searchQuery: SearchQuery) async throws -> [Media] {
+        let sessionData = try await establishSession()
+        
+        let queryItems = createAdvancedSearchQueryItems(
+            searchQuery: searchQuery, 
+            sessionId: sessionData.sessionId
+        )
+        
+        return try await performAdvancedSearch(
+            queryItems: queryItems, 
+            sessionData: sessionData
+        )
     }
     
     /**
@@ -74,35 +56,24 @@ public final class SwiftOPACService: Sendable {
      * 
      * - Parameters:
      *   - mediaId: The unique identifier of the media item
-     *   - completion: Completion handler with detailed info or error
+     * - Returns: DetailedMedia object with comprehensive information
+     * - Throws: SwiftOPACError if mediaId is invalid or parsing fails
      */
-    public func getDetailedInfo(
-        for mediaId: String, 
-        completion: @escaping @Sendable (Result<DetailedMedia, Error>) -> Void
-    ) {
+    public func getDetailedInfo(for mediaId: String) async throws -> DetailedMedia {
         guard !mediaId.isEmpty else {
-            completion(.failure(SwiftOPACError.invalidRequest("Media ID cannot be empty")))
-            return
+            throw SwiftOPACError.invalidRequest("Media ID cannot be empty")
         }
         
         guard let url = URL(string: "\(Constants.singleHitURL)?id=\(mediaId)") else {
-            completion(.failure(SwiftOPACError.invalidRequest("Could not create URL for media ID: \(mediaId)")))
-            return
+            throw SwiftOPACError.invalidRequest("Could not create URL for media ID: \(mediaId)")
         }
         
-        networkManager.fetch(url: url) { [weak self] result in
-            guard let self = self else { return }
-            
-            switch result {
-            case .success(let (html, _)):
-                if let detailedInfo = self.htmlParser.parseDetailedMediaInfo(html: html, mediaId: mediaId) {
-                    completion(.success(detailedInfo))
-                } else {
-                    completion(.failure(SwiftOPACError.parsingFailed))
-                }
-            case .failure(let error):
-                completion(.failure(error))
-            }
+        let (html, _) = try await networkManager.fetch(url: url)
+        
+        if let detailedInfo = htmlParser.parseDetailedMediaInfo(html: html, mediaId: mediaId) {
+            return detailedInfo
+        } else {
+            throw SwiftOPACError.parsingFailed
         }
     }
 
@@ -153,19 +124,16 @@ public final class SwiftOPACService: Sendable {
      */
     private func performAdvancedSearch(
         queryItems: [URLQueryItem], 
-        sessionData: SessionData, 
-        completion: @escaping @Sendable (Result<[Media], Error>) -> Void
-    ) {
+        sessionData: SessionData
+    ) async throws -> [Media] {
         guard var urlComponents = URLComponents(string: Constants.searchURL) else {
-            completion(.failure(SwiftOPACError.invalidRequest("Could not create search URL components")))
-            return
+            throw SwiftOPACError.invalidRequest("Could not create search URL components")
         }
         
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else {
-            completion(.failure(SwiftOPACError.invalidRequest("Could not create search URL from components")))
-            return
+            throw SwiftOPACError.invalidRequest("Could not create search URL from components")
         }
         
         var request = URLRequest(url: url)
@@ -180,17 +148,8 @@ public final class SwiftOPACService: Sendable {
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
         request.setValue("https://katalog.bibo-dresden.de", forHTTPHeaderField: "Referer")
 
-        networkManager.performRequest(request) { [weak self] result in
-            guard let self = self else { return }
-            
-            switch result {
-            case .success(let html):
-                let results = self.htmlParser.parseSearchResults(html: html)
-                completion(.success(results))
-            case .failure(let error):
-                completion(.failure(error))
-            }
-        }
+        let html = try await networkManager.performRequest(request)
+        return htmlParser.parseSearchResults(html: html)
     }
     
     /**
@@ -199,5 +158,53 @@ public final class SwiftOPACService: Sendable {
      */
     private func generateSessionId() -> String {
         return String(Int(Date().timeIntervalSince1970 * 1000))
+    }
+    
+    // MARK: - Backward Compatibility Methods (Completion Handlers)
+    
+    /**
+     * Performs an advanced search with multiple criteria (completion handler version)
+     * 
+     * This method is provided for backward compatibility. Use the async/await version for new code.
+     * 
+     * - Parameters:
+     *   - searchQuery: Advanced search query with multiple terms and options
+     *   - completion: Completion handler with results or error
+     */
+    public func advancedSearch(
+        searchQuery: SearchQuery, 
+        completion: @escaping @Sendable (Result<[Media], Error>) -> Void
+    ) {
+        Task {
+            do {
+                let results = try await advancedSearch(searchQuery: searchQuery)
+                completion(.success(results))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+    
+    /**
+     * Get detailed information for a specific media item (completion handler version)
+     * 
+     * This method is provided for backward compatibility. Use the async/await version for new code.
+     * 
+     * - Parameters:
+     *   - mediaId: The unique identifier of the media item
+     *   - completion: Completion handler with detailed info or error
+     */
+    public func getDetailedInfo(
+        for mediaId: String, 
+        completion: @escaping @Sendable (Result<DetailedMedia, Error>) -> Void
+    ) {
+        Task {
+            do {
+                let detailedInfo = try await getDetailedInfo(for: mediaId)
+                completion(.success(detailedInfo))
+            } catch {
+                completion(.failure(error))
+            }
+        }
     }
 }
