@@ -5,20 +5,26 @@ import PackageDescription
 
 let package = Package(
     name: "SwiftOPAC",
+    platforms: [
+        .macOS(.v10_15)
+    ],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "SwiftOPAC",
             targets: ["SwiftOPAC"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.1"),
+    ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "SwiftOPAC"),
+            name: "SwiftOPAC",
+            dependencies: ["SwiftSoup"]),
         .testTarget(
             name: "SwiftOPACTests",
-            dependencies: ["SwiftOPAC"]
-        ),
+            dependencies: ["SwiftOPAC"]),
     ]
 )
