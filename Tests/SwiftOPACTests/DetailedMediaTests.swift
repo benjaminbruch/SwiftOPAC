@@ -3,12 +3,12 @@ import XCTest
 
 final class DetailedMediaTests: XCTestCase {
     
-    var service: WebOPACService!
+    var service: SwiftOPACService!
     var parser: HTMLParser!
     
     override func setUp() {
         super.setUp()
-        service = WebOPACService()
+        service = SwiftOPACService()
         parser = HTMLParser()
     }
     

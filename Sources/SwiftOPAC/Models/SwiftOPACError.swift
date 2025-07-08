@@ -27,7 +27,7 @@ import os.log
  * let message = error.localizedDescription
  * ```
  */
-public enum WebOPACError: Error, LocalizedError, Sendable {
+public enum SwiftOPACError: Error, LocalizedError, Sendable {
     // MARK: - Request and Configuration Errors
     
     /// Invalid request parameters or configuration

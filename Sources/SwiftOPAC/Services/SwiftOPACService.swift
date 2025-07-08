@@ -1,6 +1,6 @@
 import Foundation
 
-public final class WebOPACService: Sendable {
+public final class SwiftOPACService: Sendable {
     private let networkManager = NetworkManager()
     private let htmlParser = HTMLParser()
 
@@ -14,7 +14,7 @@ public final class WebOPACService: Sendable {
         }
 
         networkManager.fetch(url: startURL) { [weak self] result in
-            guard let self: WebOPACService = self else { return }
+            guard let self: SwiftOPACService = self else { return }
 
             switch result {
             case .success(let (html, cookies)):
@@ -81,12 +81,12 @@ public final class WebOPACService: Sendable {
         completion: @escaping @Sendable (Result<DetailedMedia, Error>) -> Void
     ) {
         guard !mediaId.isEmpty else {
-            completion(.failure(WebOPACError.invalidRequest("Media ID cannot be empty")))
+            completion(.failure(SwiftOPACError.invalidRequest("Media ID cannot be empty")))
             return
         }
         
         guard let url = URL(string: "\(Constants.singleHitURL)?id=\(mediaId)") else {
-            completion(.failure(WebOPACError.invalidRequest("Could not create URL for media ID: \(mediaId)")))
+            completion(.failure(SwiftOPACError.invalidRequest("Could not create URL for media ID: \(mediaId)")))
             return
         }
         
@@ -98,7 +98,7 @@ public final class WebOPACService: Sendable {
                 if let detailedInfo = self.htmlParser.parseDetailedMediaInfo(html: html, mediaId: mediaId) {
                     completion(.success(detailedInfo))
                 } else {
-                    completion(.failure(WebOPACError.parsingFailed))
+                    completion(.failure(SwiftOPACError.parsingFailed))
                 }
             case .failure(let error):
                 completion(.failure(error))
@@ -157,14 +157,14 @@ public final class WebOPACService: Sendable {
         completion: @escaping @Sendable (Result<[Media], Error>) -> Void
     ) {
         guard var urlComponents = URLComponents(string: Constants.searchURL) else {
-            completion(.failure(WebOPACError.invalidRequest("Could not create search URL components")))
+            completion(.failure(SwiftOPACError.invalidRequest("Could not create search URL components")))
             return
         }
         
         urlComponents.queryItems = queryItems
         
         guard let url = urlComponents.url else {
-            completion(.failure(WebOPACError.invalidRequest("Could not create search URL from components")))
+            completion(.failure(SwiftOPACError.invalidRequest("Could not create search URL from components")))
             return
         }
         
