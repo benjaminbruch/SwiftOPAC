@@ -83,15 +83,15 @@ final class AdvancedSearchTests: XCTestCase {
         XCTAssertEqual(SearchCategory.all.displayName, "Alle Felder")
         XCTAssertEqual(SearchCategory.all.fieldName, "ALL")
         
-        XCTAssertEqual(SearchCategory.author.rawValue, 1)
+        XCTAssertEqual(SearchCategory.author.rawValue, 100)
         XCTAssertEqual(SearchCategory.author.displayName, "Verfasser")
         XCTAssertEqual(SearchCategory.author.fieldName, "AU")
         
-        XCTAssertEqual(SearchCategory.title.rawValue, 4)
+        XCTAssertEqual(SearchCategory.title.rawValue, 331)
         XCTAssertEqual(SearchCategory.title.displayName, "Titel")
         XCTAssertEqual(SearchCategory.title.fieldName, "TI")
         
-        XCTAssertEqual(SearchCategory.isbn.rawValue, 7)
+        XCTAssertEqual(SearchCategory.isbn.rawValue, 20)
         XCTAssertEqual(SearchCategory.isbn.displayName, "ISBN")
         XCTAssertEqual(SearchCategory.isbn.fieldName, "ISBN")
     }

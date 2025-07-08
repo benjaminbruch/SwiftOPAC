@@ -11,29 +11,29 @@ public enum SearchCategory: Int, CaseIterable, Codable, Sendable {
     /// Search all fields (default)
     case all = -1
     
-    /// Search by author/creator
-    case author = 1
+    /// Search by author/creator (SISIS code for person/author)
+    case author = 100
     
     /// Search by publisher
-    case publisher = 2
+    case publisher = 412
     
-    /// Search by title
-    case title = 4
+    /// Search by title (SISIS code for title)
+    case title = 331
     
     /// Search by subject/topic
-    case subject = 5
+    case subject = 650
     
     /// Search by ISBN
-    case isbn = 7
+    case isbn = 20
     
     /// Search by publication year
-    case year = 8
+    case year = 425
     
     /// Search by keywords
-    case keywords = 12
+    case keywords = 300
     
     /// Search by series
-    case series = 13
+    case series = 490
     
     /// Human-readable name for the search category
     public var displayName: String {

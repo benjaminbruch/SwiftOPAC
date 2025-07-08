@@ -230,7 +230,10 @@ final class DetailedMediaTests: XCTestCase {
         
         // First, search for a book to get a real ID
         let testService = service!
-        testService.search(query: "Harry Potter") { result in
+        let searchQuery = SearchQuery(terms: [
+            SearchQuery.SearchTerm(query: "Harry Potter", category: .title)
+        ])
+        testService.advancedSearch(searchQuery: searchQuery) { result in
             switch result {
             case .success(let media):
                 guard let firstItem = media.first, !firstItem.id.isEmpty else {
