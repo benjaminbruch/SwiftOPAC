@@ -387,48 +387,7 @@ func performSearch() async {
 }
 ```
 
-## Async/Await Support
 
-While the current API uses completion handlers, you can easily wrap it for async/await usage:
-
-```swift
-extension SwiftOPACService {
-    func advancedSearch(searchQuery: SearchQuery) async throws -> [Media] {
-        return try await withCheckedThrowingContinuation { continuation in
-            advancedSearch(searchQuery: searchQuery) { result in
-                continuation.resume(with: result)
-            }
-        }
-    }
-    
-    func getDetailedInfo(for mediaId: String) async throws -> DetailedMedia {
-        return try await withCheckedThrowingContinuation { continuation in
-            getDetailedInfo(for: mediaId) { result in
-                continuation.resume(with: result)
-            }
-        }
-    }
-}
-
-// Usage with async/await
-func searchExample() async {
-    let opacService = SwiftOPACService()
-    
-    do {
-        let query = SearchQuery(simpleQuery: "Swift Programming")
-        let results = try await opacService.advancedSearch(searchQuery: query)
-        
-        for media in results {
-            print("Found: \(media.title)")
-            
-            // Get detailed information
-            let details = try await opacService.getDetailedInfo(for: media.id)
-            print("Publisher: \(details.publisher)")
-        }
-    } catch {
-        print("Search failed: \(error)")
-    }
-}
 ```
 
 ## Best Practices
@@ -450,18 +409,19 @@ guard query.isValid else {
 Implement proper error handling for network issues and parsing failures:
 
 ```swift
-opacService.advancedSearch(searchQuery: query) { result in
-    switch result {
-    case .success(let results):
-        if results.isEmpty {
-            print("No results found")
-        } else {
-            // Process results
+do {
+    let results = try await opacService.advancedSearch(searchQuery: query)
+    if results.isEmpty {
+        print("No results found")
+    } else {
+        // Process results
+        for media in results {
+            print("Found: \(media.title)")
         }
-    case .failure(let error):
-        // Always handle errors appropriately
-        handleError(error)
     }
+} catch {
+    // Always handle errors appropriately
+    handleError(error)
 }
 ```
 
@@ -486,12 +446,17 @@ The service uses weak references internally to prevent retain cycles, but ensure
 class SearchViewController {
     private let opacService = SwiftOPACService()
     
-    func performSearch() {
+    func performSearch() async {
         let query = SearchQuery(simpleQuery: searchText)
         
-        opacService.advancedSearch(searchQuery: query) { [weak self] result in
-            DispatchQueue.main.async {
-                self?.handleSearchResults(result)
+        do {
+            let results = try await opacService.advancedSearch(searchQuery: query)
+            await MainActor.run {
+                self.handleSearchResults(results)
+            }
+        } catch {
+            await MainActor.run {
+                self.handleError(error)
             }
         }
     }
@@ -510,7 +475,7 @@ class SearchViewController {
 
 ## Thread Safety
 
-All types in SwiftOPAC conform to `Sendable` and are thread-safe. The service can be used from any queue, and both async/await methods and completion handlers are called on the same queue that initiated the request.
+All types in SwiftOPAC conform to `Sendable` and are thread-safe. The service can be used from any queue, and async/await methods are called on the same queue that initiated the request.
 
 ## Contributing
 
