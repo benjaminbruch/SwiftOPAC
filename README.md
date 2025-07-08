@@ -18,14 +18,14 @@ A Swift library for accessing SISIS-based OPAC (Online Public Access Catalog) sy
 Add SwiftOPAC to your project using Swift Package Manager. In Xcode, go to File > Add Package Dependencies and enter:
 
 ```
-https://github.com/your-username/SwiftOPAC.git
+https://github.com/benjaminbruch/SwiftOPAC.git
 ```
 
 Or add it to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/your-username/SwiftOPAC.git", from: "1.0.0")
+    .package(url: "https://github.com/benjaminbruch/SwiftOPAC.git", from: "1.0.0")
 ]
 ```
 
