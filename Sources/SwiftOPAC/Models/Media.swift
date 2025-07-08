@@ -7,7 +7,7 @@ import Foundation
  * This structure contains the core information about a library media item
  * including bibliographic details and media type classification.
  */
-public struct Media {
+public struct Media: Codable, Sendable {
     /// The title of the media item
     public let title: String
     

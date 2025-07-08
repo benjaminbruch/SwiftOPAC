@@ -308,4 +308,391 @@ final class HTMLParser: Sendable {
         }
         return ""
     }
+    
+    // MARK: - Enhanced Parsing Methods (SISIS-based)
+    
+    /**
+     * Parses detailed media information from SISIS HTML
+     * 
+     * Extracts comprehensive information including availability,
+     * detailed description, and additional bibliographic data.
+     * 
+     * - Parameters:
+     *   - html: Raw HTML content from detailed view
+     *   - mediaId: The unique identifier of the media item
+     * - Returns: DetailedMedia object or nil if parsing fails
+     */
+    func parseDetailedMediaInfo(html: String, mediaId: String) -> DetailedMedia? {
+        // First extract basic media info
+        guard let basicInfo = parseBasicMediaInfo(html: html, mediaId: mediaId) else {
+            return nil
+        }
+        
+        // Extract additional details that SISIS provides
+        let description = extractDescription(from: html)
+        let tableOfContents = extractTableOfContents(from: html)
+        let subjects = extractSubjects(from: html)
+        let availability = parseAvailability(html: html)
+        let additionalInfo = extractAdditionalInfo(from: html)
+        let coverImageURLs = extractCoverImageURLs(from: html)
+        let edition = extractEdition(from: html)
+        let physicalDescription = extractPhysicalDescription(from: html)
+        let language = extractLanguage(from: html)
+        let notes = extractNotes(from: html)
+        
+        return DetailedMedia(
+            basicInfo: basicInfo,
+            description: description,
+            tableOfContents: tableOfContents,
+            subjects: subjects,
+            availability: availability,
+            additionalInfo: additionalInfo,
+            coverImageURLs: coverImageURLs,
+            edition: edition,
+            physicalDescription: physicalDescription,
+            language: language,
+            notes: notes
+        )
+    }
+    
+    /**
+     * Parses media availability information from SISIS HTML
+     * 
+     * - Parameter html: Raw HTML content containing availability data
+     * - Returns: Array of availability status for each copy
+     */
+    func parseAvailability(html: String) -> [AvailabilityStatus] {
+        var availabilityList: [AvailabilityStatus] = []
+        
+        do {
+            let doc = try SwiftSoup.parse(html)
+            
+            // SISIS typically shows availability in table rows with class containing "availability" or "exemplar"
+            let availabilityRows = try doc.select("tr.resultRow, tr[class*=exemplar], tr[class*=availability]")
+            
+            for row in availabilityRows {
+                if let status = parseAvailabilityRow(row) {
+                    availabilityList.append(status)
+                }
+            }
+            
+            // If no specific availability rows found, try to extract from general result structure
+            if availabilityList.isEmpty {
+                if let generalStatus = parseGeneralAvailability(from: html) {
+                    availabilityList.append(generalStatus)
+                }
+            }
+            
+        } catch {
+            print("Error parsing availability: \(error)")
+        }
+        
+        return availabilityList
+    }
+    
+    // MARK: - Private Helper Methods for Enhanced Parsing
+    
+    private func parseBasicMediaInfo(html: String, mediaId: String) -> Media? {
+        // Try to extract basic info from detailed view or fall back to simple parsing
+        do {
+            let doc = try SwiftSoup.parse(html)
+            
+            // Look for title in various possible locations
+            var title = ""
+            if let titleElement = try? doc.select("h1, .title, .maintitle").first() {
+                title = try titleElement.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                title = cleanTitle(title)
+            }
+            
+            // Look for author information
+            var author = ""
+            if let authorElement = try? doc.select(".author, .verfasser, [class*=author]").first() {
+                author = try authorElement.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                author = cleanAuthor(author)
+            }
+            
+            // Look for year information
+            var year = ""
+            if let yearElement = try? doc.select(".year, .erscheinungsjahr, [class*=year]").first() {
+                year = try yearElement.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                year = extractYearFromText(year)
+            }
+            
+            // Look for media type
+            var mediaType = ""
+            if let typeElement = try? doc.select(".mediatype, .medientyp, img[alt]").first() {
+                if let altText = try? typeElement.attr("alt") {
+                    mediaType = altText
+                } else {
+                    mediaType = try typeElement.text()
+                }
+                mediaType = mediaType.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            
+            return Media(title: title, author: author, year: year, mediaType: mediaType, id: mediaId)
+            
+        } catch {
+            print("Error parsing basic media info: \(error)")
+            return nil
+        }
+    }
+    
+    private func parseAvailabilityRow(_ row: Element) -> AvailabilityStatus? {
+        do {
+            let rowText = try row.text().lowercased()
+            
+            // Determine availability based on common German OPAC terms
+            let isAvailable = rowText.contains("verfügbar") || 
+                             rowText.contains("ausleihbar") ||
+                             rowText.contains("vorhanden") ||
+                             !rowText.contains("ausgeliehen")
+            
+            // Extract location
+            let rowHtml = (try? row.html()) ?? ""
+            let location = extractText(from: rowHtml, pattern: #"<td[^>]*class="[^"]*location[^"]*"[^>]*>(.*?)</td>"#) ?? 
+                          extractText(from: rowHtml, pattern: #"<td[^>]*>(.*?)</td>"#) ?? ""
+            
+            // Extract call number
+            let callNumber = extractText(from: rowHtml, pattern: #"<td[^>]*class="[^"]*call[^"]*"[^>]*>(.*?)</td>"#) ?? ""
+            
+            // Extract due date if available
+            let dueDate = extractDueDate(from: rowHtml)
+            
+            // Extract reservation count
+            let reservationCount = extractReservationCount(from: rowHtml)
+            
+            return AvailabilityStatus(
+                isAvailable: isAvailable,
+                location: location.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+                callNumber: callNumber.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+                dueDate: dueDate,
+                reservationCount: reservationCount
+            )
+            
+        } catch {
+            print("Error parsing availability row: \(error)")
+            return nil
+        }
+    }
+    
+    private func parseGeneralAvailability(from html: String) -> AvailabilityStatus? {
+        // Create a general availability status when specific data isn't available
+        let isAvailable = html.lowercased().contains("verfügbar") || 
+                         html.lowercased().contains("ausleihbar")
+        
+        return AvailabilityStatus(
+            isAvailable: isAvailable,
+            location: "Bibliothek",
+            callNumber: "",
+            dueDate: nil,
+            reservationCount: 0
+        )
+    }
+    
+    private func extractDescription(from html: String) -> String? {
+        return extractText(from: html, pattern: #"<div[^>]*class="[^"]*description[^"]*"[^>]*>(.*?)</div>"#)?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+    }
+    
+    private func extractTableOfContents(from html: String) -> [String] {
+        guard let tocText = extractText(from: html, pattern: #"<div[^>]*class="[^"]*toc[^"]*"[^>]*>(.*?)</div>"#) else {
+            return []
+        }
+        
+        return tocText.components(separatedBy: CharacterSet.newlines)
+            .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+    
+    private func extractSubjects(from html: String) -> [String] {
+        guard let subjectsText = extractText(from: html, pattern: #"<div[^>]*class="[^"]*subject[^"]*"[^>]*>(.*?)</div>"#) else {
+            return []
+        }
+        
+        return subjectsText.components(separatedBy: ";")
+            .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+    
+    private func extractAdditionalInfo(from html: String) -> [String: String] {
+        var info: [String: String] = [:]
+        
+        // Extract ISBN
+        if let isbn = extractText(from: html, pattern: #"ISBN[:\s]*([0-9\-X]+)"#) {
+            info["ISBN"] = isbn
+        }
+        
+        // Extract publisher
+        if let publisher = extractText(from: html, pattern: #"Verlag[:\s]*([^<\n]+)"#) {
+            info["Verlag"] = publisher.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        }
+        
+        return info
+    }
+    
+    private func extractCoverImageURLs(from html: String) -> [String] {
+        let pattern = #"<img[^>]*src="([^"]*cover[^"]*)"[^>]*>"#
+        let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        let nsString = html as NSString
+        let results = regex?.matches(in: html, options: [], range: NSRange(location: 0, length: nsString.length)) ?? []
+        
+        return results.compactMap { result in
+            if result.numberOfRanges > 1 {
+                let urlRange = result.range(at: 1)
+                return nsString.substring(with: urlRange)
+            }
+            return nil
+        }
+    }
+    
+    private func extractEdition(from html: String) -> String? {
+        return extractText(from: html, pattern: #"Auflage[:\s]*([^<\n]+)"#)?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+    }
+    
+    private func extractPhysicalDescription(from html: String) -> String? {
+        return extractText(from: html, pattern: #"Umfang[:\s]*([^<\n]+)"#)?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+    }
+    
+    private func extractLanguage(from html: String) -> String? {
+        return extractText(from: html, pattern: #"Sprache[:\s]*([^<\n]+)"#)?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+    }
+    
+    private func extractNotes(from html: String) -> [String] {
+        guard let notesText = extractText(from: html, pattern: #"<div[^>]*class="[^"]*notes[^"]*"[^>]*>(.*?)</div>"#) else {
+            return []
+        }
+        
+        return notesText.components(separatedBy: CharacterSet.newlines)
+            .map { $0.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+    
+    private func extractDueDate(from html: String) -> Date? {
+        let datePattern = #"(\d{1,2})\.(\d{1,2})\.(\d{4})"#
+        guard let regex = try? NSRegularExpression(pattern: datePattern),
+              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+              match.numberOfRanges == 4 else {
+            return nil
+        }
+        
+        let day = Int(String(html[Range(match.range(at: 1), in: html)!])) ?? 0
+        let month = Int(String(html[Range(match.range(at: 2), in: html)!])) ?? 0
+        let year = Int(String(html[Range(match.range(at: 3), in: html)!])) ?? 0
+        
+        var components = DateComponents()
+        components.day = day
+        components.month = month
+        components.year = year
+        
+        return Calendar.current.date(from: components)
+    }
+    
+    private func extractReservationCount(from html: String) -> Int {
+        let reservationPattern = #"(\d+)\s*Vormerkung"#
+        guard let reservationText = extractText(from: html, pattern: reservationPattern) else {
+            return 0
+        }
+        
+        return Int(reservationText) ?? 0
+    }
+    
+    // MARK: - Utility Methods for Enhanced Parsing
+    
+    /**
+     * Extracts text using regex pattern from HTML string
+     * 
+     * - Parameters:
+     *   - html: The HTML string to search in
+     *   - pattern: Regular expression pattern to match
+     * - Returns: First captured group or nil if no match
+     */
+    private func extractText(from html: String, pattern: String) -> String? {
+        do {
+            let regex = try NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators])
+            let nsString = html as NSString
+            
+            if let match = regex.firstMatch(in: html, options: [], range: NSRange(location: 0, length: nsString.length)),
+               match.numberOfRanges > 1 {
+                let captureRange = match.range(at: 1)
+                let capturedText = nsString.substring(with: captureRange)
+                
+                // Clean HTML tags from the captured text
+                return try SwiftSoup.parse(capturedText).text()
+            }
+        } catch {
+            print("Error in regex extraction: \(error)")
+        }
+        
+        return nil
+    }
+    
+    /**
+     * Cleans title text by removing unwanted characters and formatting
+     * 
+     * - Parameter title: Raw title text
+     * - Returns: Cleaned title
+     */
+    private func cleanTitle(_ title: String) -> String {
+        var cleaned = title
+        
+        // Remove leading/trailing special characters
+        if cleaned.hasPrefix("¬") {
+            cleaned = String(cleaned.dropFirst())
+        }
+        
+        // Remove unwanted suffixes
+        cleaned = cleaned.replacingOccurrences(of: " [Elektronische Ressource]", with: "")
+        cleaned = cleaned.replacingOccurrences(of: " [Online-Ressource]", with: "")
+        
+        return cleaned.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+    }
+    
+    /**
+     * Cleans author text by removing metadata and formatting
+     * 
+     * - Parameter author: Raw author text
+     * - Returns: Cleaned author name
+     */
+    private func cleanAuthor(_ author: String) -> String {
+        var cleaned = author
+        
+        // Remove common German OPAC author indicators
+        cleaned = cleaned.replacingOccurrences(of: "¬[Verfasser]", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "[Verfasser]", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "¬[Herausgeber]", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "[Herausgeber]", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "¬[Autor]", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "[Autor]", with: "")
+        
+        // Remove leading ¬ character
+        if cleaned.hasPrefix("¬") {
+            cleaned = String(cleaned.dropFirst())
+        }
+        
+        return cleaned.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+    }
+    
+    /**
+     * Extracts year from text using various patterns
+     * 
+     * - Parameter text: Text containing year information
+     * - Returns: Extracted year as string
+     */
+    private func extractYearFromText(_ text: String) -> String {
+        // Try various year patterns
+        let patterns = [
+            #"\b(20\d{2}|\b19\d{2})\b"#,  // 4-digit years from 1900-2099
+            #"\[(\d{4})\]"#,               // Years in brackets
+            #"(\d{4})"#                    // Any 4-digit number
+        ]
+        
+        for pattern in patterns {
+            if let year = extractText(from: text, pattern: pattern) {
+                if let yearInt = Int(year), yearInt >= 1800 && yearInt <= 2030 {
+                    return year
+                }
+            }
+        }
+        
+        return ""
+    }
 }
