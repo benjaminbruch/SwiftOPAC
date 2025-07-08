@@ -122,22 +122,99 @@ final class HTMLParser: Sendable {
         // Look for pattern: author name followed by ¬[Verfasser]
         let lines = cellHTML.components(separatedBy: "<br />")
         for line in lines {
-            if line.contains("¬[Verfasser]") {
+            if line.contains("¬[Verfasser]") || line.contains("[Verfasser]") {
                 // Extract the text part and remove the ¬[Verfasser] part
                 let cleanLine = line.replacingOccurrences(of: "¬[Verfasser]", with: "")
+                                   .replacingOccurrences(of: "[Verfasser]", with: "")
                                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                
                 // Remove any remaining HTML tags
                 if let doc = try? SwiftSoup.parse(cleanLine),
                    let text = try? doc.text() {
                     let author = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !author.isEmpty && !isUIElement(author) {
+                                    .replacingOccurrences(of: "¬", with: "")  // Remove any remaining ¬ characters
+                    if !author.isEmpty && !isUIElement(author) && isValidAuthorName(author) {
                         return author
                     }
                 }
             }
         }
         
+        // Alternative pattern: look for lines that might contain author info
+        // This could be the second non-empty line after the title, but only if it looks like an author
+        for line in lines {
+            if !line.contains("href") && !line.isEmpty {
+                if let doc = try? SwiftSoup.parse(line),
+                   let text = try? doc.text() {
+                    let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                                       .replacingOccurrences(of: "¬", with: "")
+                    
+                    // Check if this looks like an author (contains comma and names)
+                    if isValidAuthorName(cleanText) {
+                        return cleanText
+                    }
+                }
+            }
+        }
+        
         return ""
+    }
+    
+    /// Validates if a string looks like a valid author name
+    private func isValidAuthorName(_ text: String) -> Bool {
+        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Must not be empty and have reasonable length
+        guard !cleanText.isEmpty && cleanText.count >= 3 && cleanText.count <= 100 else {
+            return false
+        }
+        
+        // Check for invalid patterns that indicate this is not an author
+        let invalidPatterns = [
+            "¬[Komponist",
+            "¬[Dirigent",
+            "[Komponist",
+            "[Dirigent",
+            "ISBN",
+            "http",
+            "<",
+            ">",
+            "/",
+            "BS",  // Bibliotheks-Systematik
+            "PS4",
+            "PS5",
+            "Xbox",
+            "Nintendo",
+            "CD ",
+            "DVD",
+            "BD ",
+            "LP ",
+            "TR ",
+            "Kinder",
+            "blau",
+            "Spiele",
+            "Freizeit"
+        ]
+        
+        for pattern in invalidPatterns {
+            if cleanText.contains(pattern) {
+                return false
+            }
+        }
+        
+        // Check if it's just numbers, dots, dashes (probably a classification)
+        if cleanText.allSatisfy({ $0.isNumber || $0.isWhitespace || $0 == "." || $0 == "-" }) {
+            return false
+        }
+        
+        // Check for UI keywords
+        if isUIElement(cleanText) {
+            return false
+        }
+        
+        // Valid author names typically contain letters and may have commas, spaces, dots
+        let hasLetters = cleanText.contains { $0.isLetter }
+        return hasLetters
     }
     
     private func extractYear(from element: Element) throws -> String {
@@ -151,18 +228,42 @@ final class HTMLParser: Sendable {
         let cellHTML = try mainCell.html()
         let lines = cellHTML.components(separatedBy: "<br />")
         
-        // Year is typically on the third line (after title and author)
+        // Look for year patterns in all lines, but prioritize realistic years
+        var foundYears: [String] = []
+        
         for line in lines {
-            // Look for year patterns: 2024, [2024], etc.
-            let yearPattern = #"\[?(\d{4})\]?"#
-            if let regex = try? NSRegularExpression(pattern: yearPattern),
-               let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) {
-                let yearRange = Range(match.range(at: 1), in: line)!
-                return String(line[yearRange])
+            // Remove HTML tags first
+            let cleanLine: String
+            if let doc = try? SwiftSoup.parse(line),
+               let text = try? doc.text() {
+                cleanLine = text
+            } else {
+                cleanLine = line
+            }
+            
+            // Look for year patterns: 2024, [2024], c2024, ©2024, etc.
+            let yearPatterns = [
+                #"(?:^|\s|\[|c|©|, )([12]\d{3})(?:\]|\.|\s|$|,)"#,  // Standard 4-digit years
+                #"\[([12]\d{3})\]"#,                                  // Bracketed years
+                #"([12]\d{3})"#                                       // Any 4-digit number starting with 1 or 2
+            ]
+            
+            for pattern in yearPatterns {
+                if let regex = try? NSRegularExpression(pattern: pattern),
+                   let match = regex.firstMatch(in: cleanLine, range: NSRange(cleanLine.startIndex..., in: cleanLine)) {
+                    let yearRange = Range(match.range(at: 1), in: cleanLine)!
+                    let year = String(cleanLine[yearRange])
+                    
+                    // Validate year is reasonable (between 1800 and current year + 2)
+                    if let yearInt = Int(year), yearInt >= 1800 && yearInt <= 2027 {
+                        foundYears.append(year)
+                    }
+                }
             }
         }
         
-        return ""
+        // Return the first reasonable year found
+        return foundYears.first ?? ""
     }
     
     private func extractMediaType(from element: Element) throws -> String {
