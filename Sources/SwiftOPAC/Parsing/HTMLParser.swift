@@ -72,13 +72,13 @@ final class HTMLParser: Sendable {
                 let year = try extractYear(from: row)
                 let mediaType = try extractMediaType(from: row)
                 let id = try extractId(from: row)
-                let isAvailable = try extractBasicAvailability(from: row)
+                let availability = try extractBasicAvailability(from: row)
                 
                 // Only add if we have a valid title and it's not a UI element
                 if !title.isEmpty && !isUIElement(title) && title != author {
-                    media.append(Media(title: title, author: author, year: year, mediaType: mediaType, id: id, isAvailable: isAvailable))
+                    media.append(Media(title: title, author: author, year: year, mediaType: mediaType, id: id, availability: availability))
                     if media.count <= 3 {
-                        print("Added media: title='\(title)', author='\(author)', year='\(year)', type='\(mediaType)', id='\(id)', available=\(isAvailable)")
+                        print("Added media: title='\(title)', author='\(author)', year='\(year)', type='\(mediaType)', id='\(id)', availability=\(availability.rawValue)")
                     }
                 }
             }
@@ -451,8 +451,8 @@ final class HTMLParser: Sendable {
      * - Parameter html: Raw HTML content containing availability data
      * - Returns: Array of availability status for each copy
      */
-    func parseAvailability(html: String) -> [AvailabilityStatus] {
-        var availabilityList: [AvailabilityStatus] = []
+    func parseAvailability(html: String) -> [ItemAvailability] {
+        var availabilityList: [ItemAvailability] = []
         
         do {
             let doc = try SwiftSoup.parse(html)
@@ -587,32 +587,26 @@ final class HTMLParser: Sendable {
             }
             
             // Look for basic availability status (SISIS-compatible)
-            var isAvailable = true  // Default to available
+            var availability: AvailabilityType = .availableAtLibrary  // Default to available
             let bodyText = try doc.text().lowercased()
             
-            // Check for explicit availability indicators
-            if bodyText.contains("verfügbar") || bodyText.contains("ausleihbar") {
-                isAvailable = true
-            } else if bodyText.contains("ausgeliehen") || bodyText.contains("nicht verfügbar") ||
-                      bodyText.contains("vorgemerkt") || bodyText.contains("bestellt") ||
-                      bodyText.contains("nicht ausleihbar") {
-                isAvailable = false
-            }
-            
-            // Check specific availability elements
-            if let availabilityElement = try? doc.select(".availability, .status, [class*='verfügbar'], [class*='ausgeliehen']").first() {
-                let availText = try availabilityElement.text().lowercased()
-                if availText.contains("verfügbar") || availText.contains("ausleihbar") {
-                    isAvailable = true
-                } else if availText.contains("ausgeliehen") || availText.contains("nicht verfügbar") {
-                    isAvailable = false
+            // Use the new availability parsing method
+            if let parsedAvailability = AvailabilityType.parse(from: bodyText) {
+                availability = parsedAvailability
+            } else {
+                // Fallback to specific availability elements
+                if let availabilityElement = try? doc.select(".availability, .status, [class*='verfügbar'], [class*='ausgeliehen']").first() {
+                    let availText = try availabilityElement.text()
+                    if let parsedFromElement = AvailabilityType.parse(from: availText) {
+                        availability = parsedFromElement
+                    }
                 }
             }
             
             // Debug output
-            print("parseBasicMediaInfo: title='\(title)', author='\(author)', year='\(year)', mediaType='\(mediaType)', available=\(isAvailable)")
+            print("parseBasicMediaInfo: title='\(title)', author='\(author)', year='\(year)', mediaType='\(mediaType)', availability=\(availability.rawValue)")
             
-            return Media(title: title, author: author, year: year, mediaType: mediaType, id: mediaId, isAvailable: isAvailable)
+            return Media(title: title, author: author, year: year, mediaType: mediaType, id: mediaId, availability: availability)
             
         } catch {
             print("Error parsing basic media info: \(error)")
@@ -688,15 +682,22 @@ final class HTMLParser: Sendable {
         return ""
     }
     
-    private func parseAvailabilityRow(_ row: Element) -> AvailabilityStatus? {
+    private func parseAvailabilityRow(_ row: Element) -> ItemAvailability? {
         do {
             let rowText = try row.text().lowercased()
             
-            // Determine availability based on common German OPAC terms
-            let isAvailable = rowText.contains("verfügbar") || 
-                             rowText.contains("ausleihbar") ||
-                             rowText.contains("vorhanden") ||
-                             !rowText.contains("ausgeliehen")
+            // Parse availability status using the new enum
+            let status: AvailabilityType
+            if let parsedStatus = AvailabilityType.parse(from: rowText) {
+                status = parsedStatus
+            } else {
+                // Fallback to basic logic
+                status = (rowText.contains("verfügbar") || 
+                         rowText.contains("ausleihbar") ||
+                         rowText.contains("vorhanden") ||
+                         !rowText.contains("ausgeliehen")) ? 
+                         .availableAtLibrary : .checkedOut
+            }
             
             // Extract location
             let rowHtml = (try? row.html()) ?? ""
@@ -712,8 +713,8 @@ final class HTMLParser: Sendable {
             // Extract reservation count
             let reservationCount = extractReservationCount(from: rowHtml)
             
-            return AvailabilityStatus(
-                isAvailable: isAvailable,
+            return ItemAvailability(
+                status: status,
                 location: location.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
                 callNumber: callNumber.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
                 dueDate: dueDate,
@@ -726,13 +727,19 @@ final class HTMLParser: Sendable {
         }
     }
     
-    private func parseGeneralAvailability(from html: String) -> AvailabilityStatus? {
+    private func parseGeneralAvailability(from html: String) -> ItemAvailability? {
         // Create a general availability status when specific data isn't available
-        let isAvailable = html.lowercased().contains("verfügbar") || 
-                         html.lowercased().contains("ausleihbar")
+        let status: AvailabilityType
+        if let parsedStatus = AvailabilityType.parse(from: html.lowercased()) {
+            status = parsedStatus
+        } else {
+            status = (html.lowercased().contains("verfügbar") || 
+                     html.lowercased().contains("ausleihbar")) ?
+                     .availableAtLibrary : .checkedOut
+        }
         
-        return AvailabilityStatus(
-            isAvailable: isAvailable,
+        return ItemAvailability(
+            status: status,
             location: "Bibliothek",
             callNumber: "",
             dueDate: nil,
@@ -1006,18 +1013,55 @@ final class HTMLParser: Sendable {
      * - Returns: Basic availability status (true = available, false = not available)
      * - Throws: SwiftSoup parsing errors
      */
-    private func extractBasicAvailability(from element: Element) throws -> Bool {
+    private func extractBasicAvailability(from element: Element) throws -> AvailabilityType {
         let rowText = try element.text().lowercased()
         
-        // Check for explicit availability indicators first
-        if rowText.contains("verfügbar") || rowText.contains("ausleihbar") {
-            return true
+        // Use the new AvailabilityType parsing method
+        if let parsedStatus = AvailabilityType.parse(from: rowText) {
+            return parsedStatus
         }
         
-        if rowText.contains("ausgeliehen") || rowText.contains("entliehen") || 
-           rowText.contains("nicht verfügbar") || rowText.contains("vorgemerkt") ||
-           rowText.contains("bestellt") || rowText.contains("nicht ausleihbar") {
-            return false
+        // Check for explicit availability indicators using pattern matching
+        if rowText.contains("verfügbar") || rowText.contains("ausleihbar") {
+            if rowText.contains("gewählten bibliothek") {
+                return .availableAtLibrary
+            }
+            return .availableAtLibrary
+        }
+        
+        if rowText.contains("ausgeliehen") || rowText.contains("entliehen") {
+            return .checkedOut
+        }
+        
+        if rowText.contains("nicht verfügbar") {
+            return .notAvailable
+        }
+        
+        if rowText.contains("vorgemerkt") {
+            return .reserved
+        }
+        
+        if rowText.contains("bestellt") {
+            return .onOrder
+        }
+        
+        if rowText.contains("nicht ausleihbar") {
+            return .notLendable
+        }
+        
+        if rowText.contains("heute zurück") {
+            return .dueTodayReturns
+        }
+        
+        if rowText.contains("vormerkbar") {
+            return .reservable
+        }
+        
+        if rowText.contains("bestellbar") {
+            if rowText.contains("anderer bibliothek") {
+                return .orderable
+            }
+            return .orderable
         }
         
         // Check for status indicators in specific cells or elements
@@ -1026,14 +1070,9 @@ final class HTMLParser: Sendable {
             let elementText = try statusElement.text().lowercased()
             let altText = try statusElement.attr("alt").lowercased()
             
-            if elementText.contains("verfügbar") || elementText.contains("ausleihbar") ||
-               altText.contains("verfügbar") || altText.contains("ausleihbar") {
-                return true
-            }
-            
-            if elementText.contains("ausgeliehen") || elementText.contains("nicht verfügbar") ||
-               altText.contains("ausgeliehen") || altText.contains("nicht verfügbar") {
-                return false
+            let combinedText = elementText + " " + altText
+            if let parsedStatus = AvailabilityType.parse(from: combinedText) {
+                return parsedStatus
             }
         }
         
@@ -1043,19 +1082,13 @@ final class HTMLParser: Sendable {
             let mainCell = try element.select("td[style*='width:100%']").first() ?? cells.get(1)
             let cellText = try mainCell.text().lowercased()
             
-            // Check for availability keywords in the main cell
-            if cellText.contains("verfügbar") || cellText.contains("ausleihbar") {
-                return true
-            }
-            
-            if cellText.contains("ausgeliehen") || cellText.contains("nicht verfügbar") ||
-               cellText.contains("vorgemerkt") || cellText.contains("bestellt") {
-                return false
+            if let parsedStatus = AvailabilityType.parse(from: cellText) {
+                return parsedStatus
             }
         }
         
         // Default to available if no clear status indicators found
         // This follows the principle that items are generally available unless explicitly marked otherwise
-        return true
+        return .availableAtLibrary
     }
 }

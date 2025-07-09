@@ -22,8 +22,8 @@ final class DetailedMediaTests: XCTestCase {
     
     func testAvailabilityStatusCreation() {
         // Given
-        let status = AvailabilityStatus(
-            isAvailable: true,
+        let status = ItemAvailability(
+            status: .availableAtLibrary,
             location: "Zentralbibliothek, 2. OG",
             callNumber: "Spr 123.4 ABC",
             dueDate: nil,
@@ -31,21 +31,21 @@ final class DetailedMediaTests: XCTestCase {
         )
         
         // Then
-        XCTAssertTrue(status.isAvailable)
+        XCTAssertTrue(status.isAvailable) // Legacy compatibility
+        XCTAssertEqual(status.status, .availableAtLibrary)
         XCTAssertEqual(status.location, "Zentralbibliothek, 2. OG")
         XCTAssertEqual(status.callNumber, "Spr 123.4 ABC")
         XCTAssertNil(status.dueDate)
         XCTAssertEqual(status.reservationCount, 0)
-        XCTAssertEqual(status.availabilityDescription, "Verfügbar")
+        XCTAssertTrue(status.availabilityDescription.contains("Ausleihbar"))
         XCTAssertTrue(status.fullDescription.contains("Zentralbibliothek"))
-        XCTAssertTrue(status.fullDescription.contains("Verfügbar"))
     }
     
     func testAvailabilityStatusWithDueDate() {
         // Given
         let dueDate = Calendar.current.date(byAdding: .day, value: 7, to: Date())!
-        let status = AvailabilityStatus(
-            isAvailable: false,
+        let status = ItemAvailability(
+            status: .checkedOut,
             location: "Hauptbibliothek",
             callNumber: "ABC 123",
             dueDate: dueDate,
@@ -53,9 +53,10 @@ final class DetailedMediaTests: XCTestCase {
         )
         
         // Then
-        XCTAssertFalse(status.isAvailable)
+        XCTAssertFalse(status.isAvailable) // Legacy compatibility
+        XCTAssertEqual(status.status, .checkedOut)
         XCTAssertEqual(status.reservationCount, 2)
-        XCTAssertTrue(status.availabilityDescription.contains("Ausgeliehen bis"))
+        XCTAssertTrue(status.availabilityDescription.contains("Ausgeliehen"))
         XCTAssertTrue(status.fullDescription.contains("2 Vormerkungen"))
     }
     
@@ -68,12 +69,13 @@ final class DetailedMediaTests: XCTestCase {
             author: "Test Author",
             year: "2023",
             mediaType: "Buch",
-            id: "123"
+            id: "123",
+            availability: .availableAtLibrary
         )
         
         let availability = [
-            AvailabilityStatus(isAvailable: true, location: "Location 1", callNumber: "ABC 123"),
-            AvailabilityStatus(isAvailable: false, location: "Location 2", callNumber: "DEF 456")
+            ItemAvailability(status: .availableAtLibrary, location: "Location 1", callNumber: "ABC 123"),
+            ItemAvailability(status: .checkedOut, location: "Location 2", callNumber: "DEF 456")
         ]
         
         let detailedMedia = DetailedMedia(
@@ -114,8 +116,8 @@ final class DetailedMediaTests: XCTestCase {
         )
         
         let availability = [
-            AvailabilityStatus(isAvailable: false, location: "Location 1", callNumber: "ABC 123"),
-            AvailabilityStatus(isAvailable: false, location: "Location 2", callNumber: "DEF 456")
+            ItemAvailability(status: .checkedOut, location: "Location 1", callNumber: "ABC 123"),
+            ItemAvailability(status: .checkedOut, location: "Location 2", callNumber: "DEF 456")
         ]
         
         let detailedMedia = DetailedMedia(
@@ -337,18 +339,19 @@ extension DetailedMediaTests {
             author: "Sample Author",
             year: "2023",
             mediaType: "Buch",
-            id: "sample123"
+            id: "sample123",
+            availability: .availableAtLibrary
         )
         
         let availability = [
-            AvailabilityStatus(
-                isAvailable: true,
+            ItemAvailability(
+                status: .availableAtLibrary,
                 location: "Zentralbibliothek, EG",
                 callNumber: "Bel 123.4 SAM",
                 reservationCount: 0
             ),
-            AvailabilityStatus(
-                isAvailable: false,
+            ItemAvailability(
+                status: .checkedOut,
                 location: "Neustadt, 1. OG",
                 callNumber: "Bel 123.4 SAM",
                 dueDate: Calendar.current.date(byAdding: .day, value: 5, to: Date()),

@@ -1,94 +1,6 @@
 import Foundation
 
 /**
- * Availability status for individual copies of library items
- * 
- * Represents the current status and location information
- * for a specific copy of a media item in the library system.
- */
-public struct AvailabilityStatus: Codable, Sendable, Identifiable {
-    
-    /// Unique identifier for this availability record
-    public let id: String
-    
-    /// Whether this copy is currently available for checkout
-    public let isAvailable: Bool
-    
-    /// Physical location of the item (e.g., "Zentralbibliothek, 2. OG")
-    public let location: String
-    
-    /// Call number or shelf location
-    public let callNumber: String
-    
-    /// Due date if the item is currently checked out
-    public let dueDate: Date?
-    
-    /// Number of holds/reservations on this item
-    public let reservationCount: Int
-    
-    /// Additional status information (e.g., "In Bearbeitung", "Vermisst")
-    public let statusNote: String?
-    
-    /**
-     * Creates a new availability status
-     * 
-     * - Parameters:
-     *   - id: Unique identifier for this record
-     *   - isAvailable: Whether the item is available for checkout
-     *   - location: Physical location of the item
-     *   - callNumber: Call number or shelf location
-     *   - dueDate: Due date if checked out
-     *   - reservationCount: Number of holds on this item
-     *   - statusNote: Additional status information
-     */
-    public init(id: String = UUID().uuidString,
-                isAvailable: Bool, 
-                location: String, 
-                callNumber: String, 
-                dueDate: Date? = nil, 
-                reservationCount: Int = 0,
-                statusNote: String? = nil) {
-        self.id = id
-        self.isAvailable = isAvailable
-        self.location = location
-        self.callNumber = callNumber
-        self.dueDate = dueDate
-        self.reservationCount = reservationCount
-        self.statusNote = statusNote
-    }
-    
-    /// Human-readable availability description
-    public var availabilityDescription: String {
-        if isAvailable {
-            return "Verfügbar"
-        } else if let dueDate = dueDate {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .short
-            return "Ausgeliehen bis \(formatter.string(from: dueDate))"
-        } else if let note = statusNote {
-            return note
-        } else {
-            return "Nicht verfügbar"
-        }
-    }
-    
-    /// Detailed status including location and call number
-    public var fullDescription: String {
-        var description = "\(location)"
-        if !callNumber.isEmpty {
-            description += " - \(callNumber)"
-        }
-        description += " - \(availabilityDescription)"
-        
-        if reservationCount > 0 {
-            description += " (\(reservationCount) Vormerkung\(reservationCount == 1 ? "" : "en"))"
-        }
-        
-        return description
-    }
-}
-
-/**
  * Detailed media information with availability data
  * 
  * Based on SISIS detailed view capabilities, this provides
@@ -110,7 +22,7 @@ public struct DetailedMedia: Codable, Sendable, Identifiable {
     public let subjects: [String]
     
     /// Availability information for all copies
-    public let availability: [AvailabilityStatus]
+    public let availability: [ItemAvailability]
     
     /// Additional bibliographic information
     public let additionalInfo: [String: String]
@@ -153,7 +65,7 @@ public struct DetailedMedia: Codable, Sendable, Identifiable {
                 description: String? = nil,
                 tableOfContents: [String] = [], 
                 subjects: [String] = [],
-                availability: [AvailabilityStatus] = [], 
+                availability: [ItemAvailability] = [], 
                 additionalInfo: [String: String] = [:],
                 coverImageURLs: [String] = [],
                 edition: String? = nil,
@@ -180,7 +92,7 @@ public struct DetailedMedia: Codable, Sendable, Identifiable {
     
     /// Number of available copies
     public var availableCopies: Int {
-        return availability.filter { $0.isAvailable }.count
+        return availability.filter { $0.status.isImmediatelyAvailable }.count
     }
     
     /// Whether any copy is currently available
@@ -216,8 +128,18 @@ extension DetailedMedia {
     }
 }
 
-extension AvailabilityStatus: CustomStringConvertible {
+extension ItemAvailability: CustomStringConvertible {
     public var description: String {
         return fullDescription
     }
 }
+
+// MARK: - Legacy Compatibility
+
+/**
+ * Legacy AvailabilityStatus for backward compatibility
+ * 
+ * @deprecated Use ItemAvailability instead
+ */
+@available(*, deprecated, message: "Use ItemAvailability instead")
+public typealias AvailabilityStatus = ItemAvailability
