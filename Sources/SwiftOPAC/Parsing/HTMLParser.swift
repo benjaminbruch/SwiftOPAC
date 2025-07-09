@@ -72,12 +72,13 @@ final class HTMLParser: Sendable {
                 let year = try extractYear(from: row)
                 let mediaType = try extractMediaType(from: row)
                 let id = try extractId(from: row)
+                let isAvailable = try extractBasicAvailability(from: row)
                 
                 // Only add if we have a valid title and it's not a UI element
                 if !title.isEmpty && !isUIElement(title) && title != author {
-                    media.append(Media(title: title, author: author, year: year, mediaType: mediaType, id: id))
+                    media.append(Media(title: title, author: author, year: year, mediaType: mediaType, id: id, isAvailable: isAvailable))
                     if media.count <= 3 {
-                        print("Added media: title='\(title)', author='\(author)', year='\(year)', type='\(mediaType)', id='\(id)'")
+                        print("Added media: title='\(title)', author='\(author)', year='\(year)', type='\(mediaType)', id='\(id)', available=\(isAvailable)")
                     }
                 }
             }
@@ -585,10 +586,33 @@ final class HTMLParser: Sendable {
                 mediaType = mediaType.trimmingCharacters(in: .whitespacesAndNewlines)
             }
             
-            // Debug output
-            print("parseBasicMediaInfo: title='\(title)', author='\(author)', year='\(year)', mediaType='\(mediaType)'")
+            // Look for basic availability status (SISIS-compatible)
+            var isAvailable = true  // Default to available
+            let bodyText = try doc.text().lowercased()
             
-            return Media(title: title, author: author, year: year, mediaType: mediaType, id: mediaId)
+            // Check for explicit availability indicators
+            if bodyText.contains("verfügbar") || bodyText.contains("ausleihbar") {
+                isAvailable = true
+            } else if bodyText.contains("ausgeliehen") || bodyText.contains("nicht verfügbar") ||
+                      bodyText.contains("vorgemerkt") || bodyText.contains("bestellt") ||
+                      bodyText.contains("nicht ausleihbar") {
+                isAvailable = false
+            }
+            
+            // Check specific availability elements
+            if let availabilityElement = try? doc.select(".availability, .status, [class*='verfügbar'], [class*='ausgeliehen']").first() {
+                let availText = try availabilityElement.text().lowercased()
+                if availText.contains("verfügbar") || availText.contains("ausleihbar") {
+                    isAvailable = true
+                } else if availText.contains("ausgeliehen") || availText.contains("nicht verfügbar") {
+                    isAvailable = false
+                }
+            }
+            
+            // Debug output
+            print("parseBasicMediaInfo: title='\(title)', author='\(author)', year='\(year)', mediaType='\(mediaType)', available=\(isAvailable)")
+            
+            return Media(title: title, author: author, year: year, mediaType: mediaType, id: mediaId, isAvailable: isAvailable)
             
         } catch {
             print("Error parsing basic media info: \(error)")
@@ -970,5 +994,68 @@ final class HTMLParser: Sendable {
      */
     func buildPositionBasedMediaURL(baseURL: String, position: Int, identifier: String) -> String {
         return "\(baseURL)/singleHit.do?tab=showExemplarActive&methodToCall=showHit&curPos=\(position)&identifier=\(identifier)"
+    }
+    
+    /**
+     * Extracts basic availability status from search result row
+     * 
+     * SISIS search results typically show basic availability indicators
+     * like "verfügbar", "ausgeliehen", "nicht verfügbar" in the result rows.
+     * 
+     * - Parameter element: The search result row element
+     * - Returns: Basic availability status (true = available, false = not available)
+     * - Throws: SwiftSoup parsing errors
+     */
+    private func extractBasicAvailability(from element: Element) throws -> Bool {
+        let rowText = try element.text().lowercased()
+        
+        // Check for explicit availability indicators first
+        if rowText.contains("verfügbar") || rowText.contains("ausleihbar") {
+            return true
+        }
+        
+        if rowText.contains("ausgeliehen") || rowText.contains("entliehen") || 
+           rowText.contains("nicht verfügbar") || rowText.contains("vorgemerkt") ||
+           rowText.contains("bestellt") || rowText.contains("nicht ausleihbar") {
+            return false
+        }
+        
+        // Check for status indicators in specific cells or elements
+        let statusElements = try element.select("td[class*='status'], td[class*='availability'], .status-cell, .availability-status, td img[alt*='status'], td img[alt*='verfügbar'], td img[alt*='ausgeliehen']")
+        for statusElement in statusElements {
+            let elementText = try statusElement.text().lowercased()
+            let altText = try statusElement.attr("alt").lowercased()
+            
+            if elementText.contains("verfügbar") || elementText.contains("ausleihbar") ||
+               altText.contains("verfügbar") || altText.contains("ausleihbar") {
+                return true
+            }
+            
+            if elementText.contains("ausgeliehen") || elementText.contains("nicht verfügbar") ||
+               altText.contains("ausgeliehen") || altText.contains("nicht verfügbar") {
+                return false
+            }
+        }
+        
+        // Look for status information in the main data cell
+        let cells = try element.select("td")
+        if cells.size() > 1 {
+            let mainCell = try element.select("td[style*='width:100%']").first() ?? cells.get(1)
+            let cellText = try mainCell.text().lowercased()
+            
+            // Check for availability keywords in the main cell
+            if cellText.contains("verfügbar") || cellText.contains("ausleihbar") {
+                return true
+            }
+            
+            if cellText.contains("ausgeliehen") || cellText.contains("nicht verfügbar") ||
+               cellText.contains("vorgemerkt") || cellText.contains("bestellt") {
+                return false
+            }
+        }
+        
+        // Default to available if no clear status indicators found
+        // This follows the principle that items are generally available unless explicitly marked otherwise
+        return true
     }
 }

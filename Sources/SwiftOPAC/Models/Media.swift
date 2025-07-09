@@ -23,6 +23,9 @@ public struct Media: Codable, Sendable {
     /// The unique identifier for this media item in the catalog
     public let id: String
     
+    /// Basic availability status from search results
+    public let isAvailable: Bool
+    
     /**
      * Creates a new Media instance with validation.
      * 
@@ -32,12 +35,14 @@ public struct Media: Codable, Sendable {
      *   - year: The publication year (will be validated for reasonableness)
      *   - mediaType: The type of media
      *   - id: The unique identifier
+     *   - isAvailable: Basic availability status (defaults to true if unknown)
      */
-    public init(title: String, author: String, year: String, mediaType: String, id: String) {
+    public init(title: String, author: String, year: String, mediaType: String, id: String, isAvailable: Bool = true) {
         self.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         self.author = author.trimmingCharacters(in: .whitespacesAndNewlines)
         self.mediaType = mediaType.trimmingCharacters(in: .whitespacesAndNewlines)
         self.id = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isAvailable = isAvailable
         
         // Validate and clean up year
         let cleanYear = year.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -55,6 +60,6 @@ public struct Media: Codable, Sendable {
     
     /// Returns a formatted string representation for debugging
     public var debugDescription: String {
-        return "Media(title: '\(title)', author: '\(author)', year: '\(year)', type: '\(mediaType)', id: '\(id)')"
+        return "Media(title: '\(title)', author: '\(author)', year: '\(year)', type: '\(mediaType)', id: '\(id)', available: \(isAvailable))"
     }
 }
