@@ -381,17 +381,17 @@ final class HTMLParser: Sendable {
             }
         }
         
-        // Try to extract ID from singleHit.do links
+        // Extract ID from singleHit.do links following SISIS pattern
+        // For SISIS, we should store the complete URL path that can be used for detailed retrieval
         if let titleLink = try element.select("a[href*='singleHit.do']").first() {
             let href = try titleLink.attr("href")
-            if let range = href.range(of: "id=") {
-                let idPart = String(href[range.upperBound...])
-                // Get the ID part (everything after id= until & or end of string)
-                if let endRange = idPart.range(of: "&") {
-                    return String(idPart[..<endRange.lowerBound])
-                } else {
-                    return idPart
-                }
+            
+            // For SISIS, return the relative URL path which contains all necessary parameters
+            // This includes methodToCall, curPos, and identifier
+            if href.hasPrefix("/webOPACClient/") {
+                return href  // Return the complete relative path
+            } else if href.contains("singleHit.do") {
+                return href  // Return whatever format it's in
             }
         }
         
@@ -486,28 +486,95 @@ final class HTMLParser: Sendable {
         do {
             let doc = try SwiftSoup.parse(html)
             
-            // Look for title in various possible locations
+            // Look for title in various possible locations (SISIS-compatible)
             var title = ""
-            if let titleElement = try? doc.select("h1, .title, .maintitle").first() {
-                title = try titleElement.text().trimmingCharacters(in: .whitespacesAndNewlines)
-                title = cleanTitle(title)
+            
+            // Try SISIS-specific selectors first
+            let titleSelectors = [
+                ".aw_teaser_title",                          // SISIS detailed view title
+                ".results-teaser > tbody > tr > td > h1",    // SISIS table title
+                "#middle h2",                                // SISIS middle section
+                ".data td strong",                           // SISIS data table
+                "h1", ".title", ".maintitle",                // Generic selectors
+                "strong"                                     // Fallback
+            ]
+            
+            for selector in titleSelectors {
+                if let titleElement = try? doc.select(selector).first() {
+                    let candidateTitle = try titleElement.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !candidateTitle.isEmpty && !isUIElement(candidateTitle) {
+                        title = cleanTitle(candidateTitle)
+                        break
+                    }
+                }
             }
             
-            // Look for author information
+            // Look for author information using detailed view structure
             var author = ""
-            if let authorElement = try? doc.select(".author, .verfasser, [class*=author]").first() {
-                author = try authorElement.text().trimmingCharacters(in: .whitespacesAndNewlines)
-                author = cleanAuthor(author)
+            
+            // Try SISIS detailed view approach based on Java implementation
+            // Look for structured data in table format
+            if let detailTable = try? doc.select(".data, #tab-content .data, .box-container .data").first() {
+                let detailCells = try detailTable.select("td")
+                
+                for cell in detailCells {
+                    let cellHTML = try cell.html()
+                    let cellText = try cell.text()
+                    
+                    // Look for author indicators in the cell content
+                    if cellHTML.contains("Verfasser") || cellHTML.contains("Author") || cellText.contains("Verfasser") {
+                        // Extract author from this cell using similar logic to search results
+                        let extractedAuthor = extractAuthorFromDetailCell(cell)
+                        if !extractedAuthor.isEmpty && isValidAuthorName(extractedAuthor) {
+                            author = extractedAuthor
+                            break
+                        }
+                    }
+                    
+                    // Also try generic author extraction
+                    if author.isEmpty {
+                        let extractedAuthor = extractAuthorFromDetailCell(cell)
+                        if !extractedAuthor.isEmpty && isValidAuthorName(extractedAuthor) && !isAvailabilityText(extractedAuthor) {
+                            author = extractedAuthor
+                            break
+                        }
+                    }
+                }
             }
             
-            // Look for year information
+            // If no author found in structured data, try broader search
+            if author.isEmpty {
+                let allElements = try doc.select("td, div, span")
+                for element in allElements {
+                    let elementText = try element.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                    if isValidAuthorName(elementText) && !isAvailabilityText(elementText) {
+                        author = cleanAuthor(elementText)
+                        break
+                    }
+                }
+            }
+            
+            // Look for year information (SISIS-compatible)
             var year = ""
-            if let yearElement = try? doc.select(".year, .erscheinungsjahr, [class*=year]").first() {
-                year = try yearElement.text().trimmingCharacters(in: .whitespacesAndNewlines)
-                year = extractYearFromText(year)
+            let yearSelectors = [
+                ".year", ".erscheinungsjahr", "[class*=year]",  // Generic year selectors
+                ".data td"                                       // SISIS data cells
+            ]
+            
+            for selector in yearSelectors {
+                let elements = try doc.select(selector)
+                for element in elements {
+                    let elementText = try element.text()
+                    let extractedYear = extractYearFromText(elementText)
+                    if !extractedYear.isEmpty {
+                        year = extractedYear
+                        break
+                    }
+                }
+                if !year.isEmpty { break }
             }
             
-            // Look for media type
+            // Look for media type (SISIS-compatible)
             var mediaType = ""
             if let typeElement = try? doc.select(".mediatype, .medientyp, img[alt]").first() {
                 if let altText = try? typeElement.attr("alt") {
@@ -518,12 +585,83 @@ final class HTMLParser: Sendable {
                 mediaType = mediaType.trimmingCharacters(in: .whitespacesAndNewlines)
             }
             
+            // Debug output
+            print("parseBasicMediaInfo: title='\(title)', author='\(author)', year='\(year)', mediaType='\(mediaType)'")
+            
             return Media(title: title, author: author, year: year, mediaType: mediaType, id: mediaId)
             
         } catch {
             print("Error parsing basic media info: \(error)")
             return nil
         }
+    }
+    
+    /**
+     * Extract author information from a detailed view cell
+     */
+    private func extractAuthorFromDetailCell(_ cell: Element) -> String {
+        do {
+            let cellHTML = try cell.html()
+            
+            // Split by various break tags like in search results
+            var lines = cellHTML.components(separatedBy: "<br />")
+            if lines.count == 1 {
+                lines = cellHTML.components(separatedBy: "<br/>")
+            }
+            if lines.count == 1 {
+                lines = cellHTML.components(separatedBy: "<br>")
+            }
+            
+            // Look for author markers
+            for line in lines {
+                if line.contains("¬[Verfasser]") || line.contains("[Verfasser]") || line.contains("Verfasser:") {
+                    // Extract the text part and remove the markers
+                    let cleanLine = line.replacingOccurrences(of: "¬[Verfasser]", with: "")
+                                       .replacingOccurrences(of: "[Verfasser]", with: "")
+                                       .replacingOccurrences(of: "Verfasser:", with: "")
+                                       .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                    
+                    // Remove any remaining HTML tags
+                    if let doc = try? SwiftSoup.parse(cleanLine) {
+                        let text = try doc.text().trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                                                  .replacingOccurrences(of: "¬", with: "")
+                        if !text.isEmpty && isValidAuthorName(text) {
+                            return text
+                        }
+                    }
+                }
+            }
+            
+            // If no explicit markers, try to find author-like text
+            for line in lines {
+                // Skip lines with links (likely titles) and empty lines
+                if line.contains("href") || line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
+                    continue
+                }
+                
+                // Parse the line to extract text
+                if let doc = try? SwiftSoup.parse(line) {
+                    let text = try doc.text().trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                                            .replacingOccurrences(of: "¬", with: "")
+                    
+                    // Check if this looks like a valid author name
+                    if isValidAuthorName(text) && !isAvailabilityText(text) {
+                        return text
+                    }
+                }
+            }
+            
+            // Fallback: try the whole cell text
+            let cellText = try cell.text().trimmingCharacters(in: .whitespacesAndNewlines)
+            if isValidAuthorName(cellText) && !isAvailabilityText(cellText) {
+                return cellText
+            }
+            
+        } catch {
+            print("Error extracting author from detail cell: \(error)")
+        }
+        
+        return ""
     }
     
     private func parseAvailabilityRow(_ row: Element) -> AvailabilityStatus? {
@@ -783,5 +921,54 @@ final class HTMLParser: Sendable {
         }
         
         return ""
+    }
+    
+    // MARK: - SISIS-compatible URL Building
+    
+    /**
+     * Builds detailed media URL following SISIS pattern from Java implementation
+     * 
+     * Java SISIS uses: /start.do?searchType=1&Query=0%3D%22{id}%22
+     * This method replicates that pattern for Swift implementation.
+     * 
+     * - Parameters:
+     *   - baseURL: Base OPAC URL
+     *   - mediaId: The media identifier extracted from search results
+     *   - startParams: Optional start parameters (e.g., "Login=foo")
+     *   - selectedBranch: Optional selected branch parameter
+     * - Returns: Complete URL for fetching detailed media information
+     */
+    func buildDetailedMediaURL(baseURL: String, mediaId: String, startParams: String? = nil, selectedBranch: String? = nil) -> String {
+        var url = "\(baseURL)/start.do?"
+        
+        // Add start parameters if provided (Java SISIS compatibility)
+        if let startParams = startParams, !startParams.isEmpty {
+            url += "\(startParams)&"
+        }
+        
+        // Add the SISIS-style query pattern: searchType=1&Query=0%3D%22{id}%22
+        url += "searchType=1&Query=0%3D%22\(mediaId)%22"
+        
+        // Add selected branch if provided
+        if let selectedBranch = selectedBranch, !selectedBranch.isEmpty {
+            url += "&selectedViewBranchlib=\(selectedBranch)"
+        }
+        
+        return url
+    }
+    
+    /**
+     * Builds position-based media URL for paginated results (Java SISIS pattern)
+     * 
+     * Java SISIS uses: /singleHit.do?tab=showExemplarActive&methodToCall=showHit&curPos={position}&identifier={identifier}
+     * 
+     * - Parameters:
+     *   - baseURL: Base OPAC URL
+     *   - position: Position in search results (1-based)
+     *   - identifier: The search session identifier
+     * - Returns: Complete URL for fetching media at specific position
+     */
+    func buildPositionBasedMediaURL(baseURL: String, position: Int, identifier: String) -> String {
+        return "\(baseURL)/singleHit.do?tab=showExemplarActive&methodToCall=showHit&curPos=\(position)&identifier=\(identifier)"
     }
 }

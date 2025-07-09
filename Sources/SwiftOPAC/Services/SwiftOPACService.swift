@@ -49,13 +49,12 @@ public final class SwiftOPACService: Sendable {
     }
     
     /**
-     * Get detailed information for a specific media item
+     * Get detailed information for a specific media item using SISIS-compatible URL pattern
      * 
-     * Retrieves comprehensive information including availability,
-     * detailed description, and additional bibliographic data.
+     * For SISIS systems, the mediaId contains the complete relative URL path to the detailed view.
+     * This approach uses the exact URL structure from the search results.
      * 
-     * - Parameters:
-     *   - mediaId: The unique identifier of the media item
+     * - Parameter mediaId: The relative URL path from search results (e.g., "/webOPACClient/singleHit.do?...")
      * - Returns: DetailedMedia object with comprehensive information
      * - Throws: SwiftOPACError if mediaId is invalid or parsing fails
      */
@@ -64,7 +63,24 @@ public final class SwiftOPACService: Sendable {
             throw SwiftOPACError.invalidRequest("Media ID cannot be empty")
         }
         
-        guard let url = URL(string: "\(Constants.singleHitURL)?id=\(mediaId)") else {
+        // Build the complete URL from the base URL and the relative path
+        let detailedURL: String
+        if mediaId.hasPrefix("/webOPACClient/") {
+            // Complete relative path - use it directly
+            detailedURL = "https://katalog.bibo-dresden.de\(mediaId)"
+        } else if mediaId.hasPrefix("singleHit.do") {
+            // Relative path without /webOPACClient/ prefix
+            detailedURL = "https://katalog.bibo-dresden.de/webOPACClient/\(mediaId)"
+        } else {
+            // Fallback to position-based approach for legacy IDs
+            detailedURL = htmlParser.buildPositionBasedMediaURL(
+                baseURL: "https://katalog.bibo-dresden.de/webOPACClient",
+                position: 1,
+                identifier: mediaId
+            )
+        }
+        
+        guard let url = URL(string: detailedURL) else {
             throw SwiftOPACError.invalidRequest("Could not create URL for media ID: \(mediaId)")
         }
         
