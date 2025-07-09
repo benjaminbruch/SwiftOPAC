@@ -109,50 +109,61 @@ final class HTMLParser: Sendable {
     }
     
     private func extractAuthor(from element: Element) throws -> String {
-        // Get the main data cell
+        // Get the main data cell - following SISIS structure more closely
         let cells = try element.select("td")
         guard cells.size() > 1 else { return "" }
         
+        // Get the main content cell (typically the second cell or one with width 100%)
         let mainCell = try element.select("td[style*='width:100%']").first() ?? 
                       cells.get(1)
         
-        // Get the HTML content and parse it manually since the author is not in a specific tag
+        // Parse the cell content similar to the Java SISIS implementation
         let cellHTML = try mainCell.html()
         
-        // Look for pattern: author name followed by ¬[Verfasser]
-        let lines = cellHTML.components(separatedBy: "<br />")
+        // Split by various break tags
+        var lines = cellHTML.components(separatedBy: "<br />")
+        if lines.count == 1 {
+            lines = cellHTML.components(separatedBy: "<br/>")
+        }
+        if lines.count == 1 {
+            lines = cellHTML.components(separatedBy: "<br>")
+        }
+        
+        // First try to find explicit author markers like ¬[Verfasser] or [Verfasser]
         for line in lines {
             if line.contains("¬[Verfasser]") || line.contains("[Verfasser]") {
                 // Extract the text part and remove the ¬[Verfasser] part
                 let cleanLine = line.replacingOccurrences(of: "¬[Verfasser]", with: "")
                                    .replacingOccurrences(of: "[Verfasser]", with: "")
-                                   .trimmingCharacters(in: .whitespacesAndNewlines)
+                                   .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
                 
                 // Remove any remaining HTML tags
-                if let doc = try? SwiftSoup.parse(cleanLine),
-                   let text = try? doc.text() {
-                    let author = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    .replacingOccurrences(of: "¬", with: "")  // Remove any remaining ¬ characters
-                    if !author.isEmpty && !isUIElement(author) && isValidAuthorName(author) {
-                        return author
+                if let doc = try? SwiftSoup.parse(cleanLine) {
+                    let text = try doc.text().trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                                              .replacingOccurrences(of: "¬", with: "")
+                    if !text.isEmpty && isValidAuthorName(text) {
+                        return text
                     }
                 }
             }
         }
         
-        // Alternative pattern: look for lines that might contain author info
-        // This could be the second non-empty line after the title, but only if it looks like an author
+        // Alternative approach: Look for structured content similar to Java implementation
+        // Check for patterns that typically contain author information
         for line in lines {
-            if !line.contains("href") && !line.isEmpty {
-                if let doc = try? SwiftSoup.parse(line),
-                   let text = try? doc.text() {
-                    let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                       .replacingOccurrences(of: "¬", with: "")
-                    
-                    // Check if this looks like an author (contains comma and names)
-                    if isValidAuthorName(cleanText) {
-                        return cleanText
-                    }
+            // Skip lines with links (likely titles) and empty lines
+            if line.contains("href") || line.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
+                continue
+            }
+            
+            // Parse the line to extract text
+            if let doc = try? SwiftSoup.parse(line) {
+                let text = try doc.text().trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                                        .replacingOccurrences(of: "¬", with: "")
+                
+                // Check if this looks like a valid author name
+                if isValidAuthorName(text) && !isAvailabilityText(text) {
+                    return text
                 }
             }
         }
@@ -160,9 +171,21 @@ final class HTMLParser: Sendable {
         return ""
     }
     
+    /// Checks if text is likely availability status information
+    private func isAvailabilityText(_ text: String) -> Bool {
+        let lowercaseText = text.lowercased()
+        let availabilityKeywords = [
+            "verfügbar", "ausleihbar", "entliehen", "vorgemerkt", 
+            "bestellt", "vormerkbar", "bestellbar", "nicht verfügbar",
+            "nicht ausleihbar", "status", "exemplar", "heute zurück"
+        ]
+        
+        return availabilityKeywords.contains { lowercaseText.contains($0) }
+    }
+    
     /// Validates if a string looks like a valid author name
     private func isValidAuthorName(_ text: String) -> Bool {
-        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanText = text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
         
         // Must not be empty and have reasonable length
         guard !cleanText.isEmpty && cleanText.count >= 3 && cleanText.count <= 100 else {
@@ -175,8 +198,23 @@ final class HTMLParser: Sendable {
             "¬[Dirigent",
             "[Komponist",
             "[Dirigent",
+            "verfügbar",           // Availability status
+            "ausleihbar",          // Availability status
+            "entliehen",           // Availability status
+            "vorgemerkt",          // Availability status
+            "bestellt",            // Availability status
+            "vormerkbar",          // Availability status
+            "bestellbar",          // Availability status
+            "ausleihbar",          // Availability status
+            "nicht verfügbar",     // Availability status
+            "nicht ausleihbar",    // Availability status
+            "heute zurück",        // Availability status
+            "heute",               // Common in availability texts
+            "zurück",              // Common in availability texts
             "ISBN",
+            "ISSN",
             "http",
+            "www.",
             "<",
             ">",
             "/",
@@ -193,11 +231,25 @@ final class HTMLParser: Sendable {
             "Kinder",
             "blau",
             "Spiele",
-            "Freizeit"
+            "Freizeit",
+            "Signatur",            // Call number
+            "Standort",            // Location
+            "Zweigstelle",         // Branch
+            "Status",              // Status
+            "Mediennummer",        // Media number
+            "Exemplar",            // Copy
+            "Auflage",             // Edition
+            "Seiten",              // Pages
+            "ISBN-10",
+            "ISBN-13",
+            "EAN",
+            "Barcode"
         ]
         
+        // Check if text contains any invalid patterns
+        let lowercaseText = cleanText.lowercased()
         for pattern in invalidPatterns {
-            if cleanText.contains(pattern) {
+            if lowercaseText.contains(pattern.lowercased()) {
                 return false
             }
         }
@@ -214,7 +266,25 @@ final class HTMLParser: Sendable {
         
         // Valid author names typically contain letters and may have commas, spaces, dots
         let hasLetters = cleanText.contains { $0.isLetter }
-        return hasLetters
+        if !hasLetters {
+            return false
+        }
+        
+        // Additional check: reject single words that look like system text
+        let words = cleanText.components(separatedBy: CharacterSet.whitespacesAndNewlines)
+        if words.count == 1 && words.first?.count ?? 0 < 3 {
+            return false
+        }
+        
+        // Check for common non-author terms
+        let nonAuthorTerms = ["status", "exemplar", "verfügbar", "ausleihbar", 
+                             "entliehen", "vorgemerkt", "bestellt", "signatur",
+                             "standort", "mediennummer"]
+        if nonAuthorTerms.contains(lowercaseText) {
+            return false
+        }
+        
+        return true
     }
     
     private func extractYear(from element: Element) throws -> String {
