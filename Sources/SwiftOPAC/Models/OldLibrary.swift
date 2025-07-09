@@ -1,12 +1,58 @@
 import Foundation
 
+
+
+public enum Library : Sendable {
+    case biboDresden
+    case biboLeipzig
+}
+
+public struct LibraryConfig : Sendable {
+    
+    let library: Library
+    
+    var baseURL: String {
+        switch library {
+        case .biboDresden:
+            return "https://katalog.bibo-dresden.de/webOPACClient"
+        case .biboLeipzig:
+            return "https://bibliothekskatalog.leipzig.de/webOPACClient"
+        }
+    }
+    
+    var displayName: String {
+        switch library {
+        case .biboDresden:
+            return "Städtische Bibliotheken Dresden"
+        case .biboLeipzig:
+            return "Leipziger Städtischen Bibliotheken"
+        }
+    }
+    
+    var branches: [Int:String] {
+        switch library {
+        case .biboDresden:
+            [
+                0: "Zentralbibliothek",
+                1: "Neustadt"
+            ]
+        case .biboLeipzig:
+            [0:"Stadtbibliothek"]
+        }
+    }
+    
+    public init(library: Library) {
+        self.library = library
+    }
+}
+
 /**
  * Represents available libraries in the Dresden OPAC system.
  * 
  * This enumeration defines the different library branches that can be searched
  * and used as view contexts for search operations.
  */
-public enum Library: Int, CaseIterable, Sendable {
+public enum OldLibrary: Int, CaseIterable, Sendable {
     /// Central Library (Zentralbibliothek)
     case zentralbibliothek = 0
     
@@ -39,17 +85,17 @@ public enum Library: Int, CaseIterable, Sendable {
     }
     
     /// Default library for searches when none is specified
-    public static let `default`: Library = .zentralbibliothek
+    public static let `default`: OldLibrary = .zentralbibliothek
 }
 
 // MARK: - Codable Conformance
 
-extension Library: Codable {
+extension OldLibrary: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(Int.self)
         
-        guard let library = Library(rawValue: rawValue) else {
+        guard let library = OldLibrary(rawValue: rawValue) else {
             throw DecodingError.dataCorruptedError(
                 in: container,
                 debugDescription: "Invalid library value: \(rawValue)"
@@ -67,7 +113,7 @@ extension Library: Codable {
 
 // MARK: - CustomStringConvertible
 
-extension Library: CustomStringConvertible {
+extension OldLibrary: CustomStringConvertible {
     public var stringDescription: String {
         return displayName
     }

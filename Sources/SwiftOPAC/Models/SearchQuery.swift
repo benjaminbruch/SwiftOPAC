@@ -51,7 +51,7 @@ public struct SearchQuery: Codable, Sendable {
     public let terms: [SearchTerm]
     
     /// The library to search in
-    public let library: Library
+    public let library: OldLibrary
     
     /// How to sort the results
     public let sortOrder: SortOrder
@@ -71,8 +71,8 @@ public struct SearchQuery: Codable, Sendable {
      *   - resultsPerPage: Maximum results per page (defaults to 50)
      */
     public init(terms: [SearchTerm], 
-                library: Library = .zentralbibliothek, 
-                sortOrder: SortOrder = .relevance, 
+                library: OldLibrary = .zentralbibliothek,
+                sortOrder: SortOrder = .relevance,
                 resultsPerPage: Int = 50) {
         self.terms = terms
         self.library = library
@@ -91,7 +91,7 @@ public struct SearchQuery: Codable, Sendable {
      *   - sortOrder: How to sort results (defaults to relevance)
      */
     public init(simpleQuery: String, 
-                library: Library = .zentralbibliothek, 
+                library: OldLibrary = .zentralbibliothek,
                 sortOrder: SortOrder = .relevance) {
         let term = SearchTerm(query: simpleQuery, category: .all, searchOperator: .and)
         self.init(terms: [term], library: library, sortOrder: sortOrder)

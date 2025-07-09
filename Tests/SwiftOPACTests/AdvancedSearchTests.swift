@@ -7,7 +7,7 @@ final class AdvancedSearchTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
-        service = SwiftOPACService()
+        service = SwiftOPACService(libraryConfig: LibraryConfig(library: .biboDresden))
     }
     
     override func tearDown() {

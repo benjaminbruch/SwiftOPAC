@@ -3,11 +3,14 @@ import Foundation
 public final class SwiftOPACService: Sendable {
     private let networkManager = NetworkManager()
     private let htmlParser = HTMLParser()
+    public let libraryConfig: LibraryConfig
 
-    public init() {}
+    public init(libraryConfig: LibraryConfig) {
+        self.libraryConfig = libraryConfig
+    }
 
     private func establishSession() async throws -> SessionData {
-        guard let startURL = URL(string: Constants.baseURL) else {
+        guard let startURL = URL(string: libraryConfig.baseURL+"/start.do") else {
             throw NSError(domain: "WebOPACService", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid start URL"])
         }
 

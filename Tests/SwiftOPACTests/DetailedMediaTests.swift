@@ -8,7 +8,7 @@ final class DetailedMediaTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
-        service = SwiftOPACService()
+        service = SwiftOPACService(libraryConfig: LibraryConfig(library: .biboDresden))
         parser = HTMLParser()
     }
     
