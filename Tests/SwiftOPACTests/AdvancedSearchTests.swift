@@ -3,11 +3,11 @@ import XCTest
 
 final class AdvancedSearchTests: XCTestCase {
     
-    var service: SwiftOPACService!
+    var service: SwiftOPACServiceOld!
     
     override func setUp() {
         super.setUp()
-        service = SwiftOPACService(libraryConfig: LibraryConfig(library: .biboDresden))
+        service = SwiftOPACServiceOld(libraryConfig: OldLibraryConfig(library: .dresdenBibo))
     }
     
     override func tearDown() {

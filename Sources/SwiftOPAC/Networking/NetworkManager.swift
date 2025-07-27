@@ -9,6 +9,19 @@ final class NetworkManager: Sendable {
         configuration.httpCookieAcceptPolicy = .always
         self.urlSession = URLSession(configuration: configuration)
     }
+
+    func fetchData(from url: URL) async throws -> (Data, URLResponse) {
+        print("Fetching data from URL: \(url)")
+        
+        let (data, response) = try await urlSession.data(from: url)
+        
+        if let httpResponse = response as? HTTPURLResponse {
+            print("Response status code: \(httpResponse.statusCode)")
+            print("Response headers: \(httpResponse.allHeaderFields)")
+        }
+        
+        return (data, response)
+    }
     
     func fetch(url: URL) async throws -> (String, [HTTPCookie]) {
         print("Fetching URL: \(url)")

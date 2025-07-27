@@ -1,45 +1,34 @@
 import Foundation
 
 
-
-public enum Library : Sendable {
-    case biboDresden
-    case biboLeipzig
-}
-
-public struct LibraryConfig : Sendable {
+public struct OldLibraryConfig : Sendable {
     
     let library: Library
     
     var baseURL: String {
         switch library {
-        case .biboDresden:
+        case .dresdenBibo:
             return "https://katalog.bibo-dresden.de/webOPACClient"
-        case .biboLeipzig:
-            return "https://bibliothekskatalog.leipzig.de/webOPACClient"
         }
     }
     
     var displayName: String {
         switch library {
-        case .biboDresden:
+        case .dresdenBibo:
             return "Städtische Bibliotheken Dresden"
-        case .biboLeipzig:
-            return "Leipziger Städtischen Bibliotheken"
         }
     }
-    
-    var branches: [Int:String] {
-        switch library {
-        case .biboDresden:
-            [
-                0: "Zentralbibliothek",
-                1: "Neustadt"
-            ]
-        case .biboLeipzig:
-            [0:"Stadtbibliothek"]
-        }
-    }
+            
+            var branches: [Int:String] {
+                switch library {
+                case .dresdenBibo:
+                    [
+                        0: "Zentralbibliothek",
+                        1: "Neustadt"
+                    ]
+                }
+            }
+        
     
     public init(library: Library) {
         self.library = library
