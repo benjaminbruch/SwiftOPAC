@@ -1,0 +1,21 @@
+public protocol OPACServiceProtocol: Sendable {
+  
+    
+  func simpleSearch(query: String) async throws -> [OpacSearchResult]
+  func advancedSearch(query: String, filters: [String: String]) async throws -> [OpacSearchResult]
+  func getDetails(for item: OpacSearchResult) async throws -> OpacItemDetails
+}
+
+public protocol OpacSearchResult {
+  var title: String { get }
+  var subtitle: String { get }
+  var identifier: String { get }
+}
+public protocol OpacItemDetails {
+  var title: String { get }
+  var author: String { get }
+  var publicationDate: String { get }
+  var description: String { get }
+  var availability: String { get }
+}
+

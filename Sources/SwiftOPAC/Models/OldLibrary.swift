@@ -7,21 +7,23 @@ public struct OldLibraryConfig : Sendable {
     
     var baseURL: String {
         switch library {
-        case .dresdenBibo:
+        case .dresdenBibo, .leipzigBibo:
             return "https://katalog.bibo-dresden.de/webOPACClient"
+
         }
+    
     }
     
     var displayName: String {
         switch library {
-        case .dresdenBibo:
+        case .dresdenBibo, .leipzigBibo:
             return "Städtische Bibliotheken Dresden"
         }
     }
             
             var branches: [Int:String] {
                 switch library {
-                case .dresdenBibo:
+                case .dresdenBibo, .leipzigBibo:
                     [
                         0: "Zentralbibliothek",
                         1: "Neustadt"
